@@ -1,0 +1,14 @@
+/*.apk
+/*.apkm
+/*.exe
+host/build/
+host/out/
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.h265
+*.h264
+*.iml
