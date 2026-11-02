@@ -39,6 +39,7 @@ struct Options {
     bool list = false;
     bool noAdb = false;
     bool stress = false;
+    bool noCursorRestore = false;
 };
 
 std::wstring lower(std::wstring s) {
@@ -72,6 +73,7 @@ void usage() {
         "  --bench <seconds>      capture and encode locally without a tablet\n"
         "  --stress               with --bench: encode at the target rate even when the screen is static\n"
         "  --log-input            print touch and pen events received from the tablet\n"
+        "  --no-cursor-restore    leave the mouse cursor where the tablet tap moved it\n"
         "  --dump <file>          with --bench: write the encoded stream to a file\n");
 }
 
@@ -96,6 +98,8 @@ bool parseArgs(int argc, wchar_t** argv, Options& o) {
             o.stress = true;
         } else if (a == L"--log-input") {
             g_logInput = true;
+        } else if (a == L"--no-cursor-restore") {
+            o.noCursorRestore = true;
         } else if (a == L"--monitor" && next(v)) {
             o.monitor = v;
         } else if (a == L"--serial" && next(v)) {
@@ -574,6 +578,7 @@ int runStream(const Options& o, Capture& capture, const OutputInfo& out) {
         }
         Injector injector;
         injector.open(out.gdiName);
+        injector.setRestoreCursor(!o.noCursorRestore);
         if (!lastCursor.bgra.empty()) {
             CursorUpdate replay = lastCursor;
             replay.shapeChanged = true;
@@ -632,6 +637,7 @@ int runStream(const Options& o, Capture& capture, const OutputInfo& out) {
                 lastCursor.y = cursor.y;
             }
             sendCursor(conn, cursor);
+            injector.tick();
             uint64_t now = nowUs();
             if (inFlight >= o.maxInFlight && now - lastAck > 500000) {
                 inFlight = 0;

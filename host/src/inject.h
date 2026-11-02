@@ -18,6 +18,8 @@ public:
     bool open(const std::wstring& gdiName);
     void close();
     void refresh();
+    void tick();
+    void setRestoreCursor(bool enabled);
     void touch(const std::vector<TouchPoint>& points);
     void pen(const PenSample& sample);
     void releaseAll();
@@ -25,6 +27,15 @@ public:
 private:
     POINT map(uint16_t x, uint16_t y) const;
     void refreshLocked(bool force);
+    bool interactingLocked() const;
+    void beginInteractionLocked();
+    void endInteractionLocked();
+    void restoreLocked();
+
+    bool restoreCursor_ = true;
+    bool saved_ = false;
+    POINT savedCursor_{};
+    ULONGLONG restoreAt_ = 0;
 
     std::wstring gdiName_;
     bool valid_ = false;

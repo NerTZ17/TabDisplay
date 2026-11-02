@@ -25,6 +25,8 @@ bool Injector::open(const std::wstring& gdiName) {
 void Injector::close() {
     if (touchDevice_ || penDevice_) {
         releaseAll();
+        std::lock_guard<std::mutex> lock(mutex_);
+        restoreLocked();
     }
     if (touchDevice_) {
         DestroySyntheticPointerDevice(touchDevice_);
@@ -94,6 +96,9 @@ void Injector::touch(const std::vector<TouchPoint>& points) {
         bool contact = (tp.flags & kTouchContact) != 0;
         POINTER_FLAGS flags;
         POINT pt = contact ? map(tp.x, tp.y) : last_[tp.id];
+        if (contact && !active_[tp.id]) {
+            beginInteractionLocked();
+        }
         if (contact) {
             flags = POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | (active_[tp.id] ? POINTER_FLAG_UPDATE : POINTER_FLAG_DOWN);
             active_[tp.id] = true;
@@ -124,6 +129,56 @@ void Injector::touch(const std::vector<TouchPoint>& points) {
     if (!infos.empty() && !InjectSyntheticPointerInput(touchDevice_, infos.data(), static_cast<UINT32>(infos.size()))) {
         std::fprintf(stderr, "inject: touch failed (%lu)\n", GetLastError());
     }
+    endInteractionLocked();
+}
+
+bool Injector::interactingLocked() const {
+    for (bool a : active_) {
+        if (a) {
+            return true;
+        }
+    }
+    return penContact_;
+}
+
+void Injector::beginInteractionLocked() {
+    if (!restoreCursor_) {
+        return;
+    }
+    restoreAt_ = 0;
+    if (!saved_) {
+        saved_ = GetCursorPos(&savedCursor_) != FALSE;
+    }
+}
+
+void Injector::endInteractionLocked() {
+    if (saved_ && !interactingLocked()) {
+        restoreAt_ = GetTickCount64() + 80;
+    }
+}
+
+void Injector::restoreLocked() {
+    restoreAt_ = 0;
+    if (!saved_) {
+        return;
+    }
+    saved_ = false;
+    POINT now{};
+    if (GetCursorPos(&now) && PtInRect(&rect_, now)) {
+        SetCursorPos(savedCursor_.x, savedCursor_.y);
+    }
+}
+
+void Injector::tick() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (restoreAt_ != 0 && GetTickCount64() >= restoreAt_) {
+        restoreLocked();
+    }
+}
+
+void Injector::setRestoreCursor(bool enabled) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    restoreCursor_ = enabled;
 }
 
 void Injector::pen(const PenSample& s) {
@@ -169,10 +224,14 @@ void Injector::pen(const PenSample& s) {
     pi.rotation = s.rotation % 360;
     pi.tiltX = s.tiltX;
     pi.tiltY = s.tiltY;
+    if (contact && !penContact_) {
+        beginInteractionLocked();
+    }
     if (!InjectSyntheticPointerInput(penDevice_, &info, 1)) {
         std::fprintf(stderr, "inject: pen failed (%lu)\n", GetLastError());
         penInRange_ = false;
         penContact_ = false;
+        endInteractionLocked();
         return;
     }
     if (!inRange && penContact_) {
@@ -184,6 +243,9 @@ void Injector::pen(const PenSample& s) {
     penInRange_ = inRange;
     penContact_ = contact;
     penLast_ = pt;
+    if (!contact) {
+        endInteractionLocked();
+    }
 }
 
 void Injector::releaseAll() {

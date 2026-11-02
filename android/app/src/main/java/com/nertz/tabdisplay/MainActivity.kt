@@ -175,6 +175,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamServer.Listener {
         statsView.setBackgroundColor(0xA0000000.toInt())
         val pad = dp(10)
         statsView.setPadding(pad, pad, pad, pad)
+        statsView.visibility = View.GONE
         root.addView(statsView, FrameLayout.LayoutParams(WRAP, WRAP, Gravity.TOP or Gravity.START).also {
             it.setMargins(dp(16), dp(16), 0, 0)
         })

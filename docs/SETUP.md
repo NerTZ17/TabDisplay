@@ -85,6 +85,7 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 | `--serial <id>` | Serial adb kalau ada beberapa perangkat |
 | `--no-adb` | Jangan jalankan `adb forward` |
 | `--log-input` | Tampilkan event sentuhan dan pena dari tablet |
+| `--no-cursor-restore` | Jangan kembalikan kursor mouse ke posisi sebelum tap (default: dikembalikan 80 ms setelah jari/pena diangkat) |
 | `--bench <detik>` | Uji capture + encode tanpa tablet |
 | `--stress` | Dengan `--bench`: encode terus walau layar diam |
 | `--dump <file>` | Dengan `--bench`: simpan stream ke file |
@@ -106,4 +107,5 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 | `NVENC needs it on the NVIDIA GPU` | Monitor virtual dirender adapter lain | Set GPU render VDD ke RTX 3070 di pengaturan VDD |
 | `adb forward failed` | Tablet belum diizinkan / kabel | `adb devices`, izinkan dialog di tablet |
 | `waiting for the tablet app` terus | App belum dibuka | Buka TabDisplay di tablet |
+| `session ended` lalu `device 'xxx' not found`, berulang | Link USB reset (log tablet: `UsbFfs: connection terminated: Error while reading USB block`), biasanya karena hub/port depan/kabel charger | Colok langsung ke port USB belakang motherboard dengan kabel data USB 3; di PC ini 6 putus/8 menit lewat hub VIA VL817 menjadi 0 putus/3 menit setelah dipindah |
 | `driver supports NVENC API ...` | Driver NVIDIA terlalu lama | Update driver NVIDIA |
