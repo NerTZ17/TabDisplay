@@ -26,6 +26,12 @@ The result is TabDisplay. It runs well on my own setup every day: a Galaxy Tab S
 - Tray app with an On/Off switch. Plug the tablet in and the extra monitor appears and the tablet app opens by itself; unplug it and Windows goes back to your normal monitors.
 - Starts with Windows, remembers its state, recovers on its own from cable drops and app restarts.
 
+## Use it as a touch control panel
+
+Because a tap on the tablet sends your mouse cursor straight back, the tablet also works as a stream deck-style control panel. Put a soundboard, OBS scene buttons, a macro launcher or a music player on the tablet's monitor and tap them while you keep working, streaming or playing on your main screen.
+
+Not tested yet with games in exclusive fullscreen mode. A tap on the tablet can move focus to the window under your finger, and some games minimise when they lose focus. Borderless windowed mode is the safer choice until this is tested.
+
 Measured on the author's PC (RTX 3070, Galaxy Tab S10 Ultra, USB 3): 120 fps at 2960×1848, about 21 ms from the PC to the tablet's screen and back.
 
 ## Requirements
@@ -84,6 +90,7 @@ The wire protocol is documented in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 - **Netflix and other DRM video show black.** Protected video is blanked by Windows in every screen-capture path, and a virtual monitor has no HDCP. This is by design and TabDisplay does not work around it; use the streaming app on the tablet itself.
 - USB debugging must stay enabled on the tablet.
 - No audio forwarding yet.
+- Not tested with games in exclusive fullscreen mode (see [Use it as a touch control panel](#use-it-as-a-touch-control-panel)).
 - Tested on one PC and one tablet so far. Reports from other hardware are welcome.
 
 ## Credits
