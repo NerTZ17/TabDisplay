@@ -22,7 +22,7 @@ The result is TabDisplay. It runs well on my own setup every day: a Galaxy Tab S
 - Extends the Windows desktop to the tablet as a real monitor (not a mirror), at the tablet's native resolution and up to its highest refresh rate.
 - Low latency: hardware H.265/HEVC or H.264 encoding on the PC, hardware decoding on the tablet, frames acknowledged one by one so lag never piles up.
 - Touch (10 fingers) and stylus with pressure, tilt, hover and side button, injected as real Windows touch and pen input; palm rejection while the pen is near.
-- The mouse cursor returns to where it was after you tap on the tablet.
+- Touch never steals your mouse. Tap, scroll or draw on the tablet, and the mouse cursor jumps back to where it was on your other monitors, so you can keep working there without looking for it.
 - Tray app with an On/Off switch. Plug the tablet in and the extra monitor appears and the tablet app opens by itself; unplug it and Windows goes back to your normal monitors.
 - Starts with Windows, remembers its state, recovers on its own from cable drops and app restarts.
 

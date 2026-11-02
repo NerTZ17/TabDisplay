@@ -96,6 +96,7 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 |---|---|
 | Switch **On**, tablet plugged in | Virtual monitor attached, tablet app opened (once per plug-in), streaming |
 | Tablet unplugged | Virtual monitor detached, Windows returns to your other monitors |
+| Tap, scroll or draw on the tablet | Input lands on the tablet screen; the mouse cursor goes back to where it was on your other monitors |
 | Switch **Off** | Streaming stops, virtual monitor detached |
 | Click the tray icon | Open or close the panel |
 | Right-click the tray icon → Exit | Stop everything and quit |
