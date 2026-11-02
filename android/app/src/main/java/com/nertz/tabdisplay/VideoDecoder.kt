@@ -2,6 +2,7 @@ package com.nertz.tabdisplay
 
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Process
@@ -312,7 +313,7 @@ class VideoDecoder(private val stats: Stats) {
             val format = MediaFormat.createVideoFormat(mime, cfg.width, cfg.height)
             format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, cfg.width * cfg.height)
             format.setInteger(MediaFormat.KEY_PRIORITY, 0)
-            if (choice?.lowLatency == true) format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+            if (Build.VERSION.SDK_INT >= 30 && choice?.lowLatency == true) format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             if (extended) {
                 val max = choice?.maxFps ?: 0
                 val rate = if (max > 0) cfg.fps.coerceIn(1, max) else cfg.fps

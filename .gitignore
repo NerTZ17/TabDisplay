@@ -1,7 +1,10 @@
-/*.apk
-/*.apkm
-/*.exe
+*.apk
+*.apks
+*.apkm
+*.aab
+*.exe
 host/build/
+host/build-*/
 host/out/
 android/.gradle/
 android/.kotlin/
@@ -12,3 +15,4 @@ android/.idea/
 *.h265
 *.h264
 *.iml
+*.log

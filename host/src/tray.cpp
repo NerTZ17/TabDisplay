@@ -317,25 +317,25 @@ HICON makeIcon(int kind) {
 
 std::wstring statusTitle(const EngineStatus& s) {
     if (g.stopping) {
-        return L"Mematikan…";
+        return L"Turning off…";
     }
     if (!g.enabled) {
-        return L"Mati";
+        return L"Off";
     }
     switch (s.state) {
         case EngineState::Streaming:
-            return L"Tersambung";
+            return L"Connected";
         case EngineState::NoTablet:
-            return L"Menunggu tablet";
+            return L"Waiting for tablet";
         case EngineState::OpeningApp:
-            return s.detail.empty() ? L"Membuka app di tablet" : s.detail;
+            return s.detail.empty() ? L"Opening the tablet app" : s.detail;
         case EngineState::TabletProblem:
         case EngineState::Error:
             return s.detail;
         case EngineState::Stopping:
-            return L"Mematikan…";
+            return L"Turning off…";
         default:
-            return L"Menyiapkan…";
+            return L"Starting…";
     }
 }
 
@@ -349,8 +349,9 @@ std::wstring streamLine(const EngineStatus& s) {
 }
 
 std::wstring infoLine(const EngineStatus& s) {
-    wchar_t buf[128];
-    swprintf_s(buf, L"Latensi %.0f ms · %.0f fps diterima · %.0f Mbps · %s", s.rttMs, s.ackFps, s.mbps, s.hevc ? L"HEVC" : L"H.264");
+    wchar_t buf[160];
+    std::wstring encoder(s.encoder.begin(), s.encoder.end());
+    swprintf_s(buf, L"Latency %.0f ms · %.0f fps · %.0f Mbps · %s %s", s.rttMs, s.ackFps, s.mbps, s.hevc ? L"HEVC" : L"H.264", encoder.c_str());
     return buf;
 }
 
@@ -439,13 +440,13 @@ void createFormats() {
     if (!exists) {
         iconFont = L"Segoe MDL2 Assets";
     }
-    g.dwrite->CreateTextFormat(display, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 20.0f, L"id-id",
+    g.dwrite->CreateTextFormat(display, nullptr, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 20.0f, L"en-us",
                                &g.titleFormat);
-    g.dwrite->CreateTextFormat(text, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"id-id",
+    g.dwrite->CreateTextFormat(text, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-us",
                                &g.bodyFormat);
-    g.dwrite->CreateTextFormat(text, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f, L"id-id",
+    g.dwrite->CreateTextFormat(text, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f, L"en-us",
                                &g.captionFormat);
-    g.dwrite->CreateTextFormat(iconFont, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"id-id",
+    g.dwrite->CreateTextFormat(iconFont, nullptr, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 14.0f, L"en-us",
                                &g.iconFormat);
     for (IDWriteTextFormat* f : {g.titleFormat.Get(), g.bodyFormat.Get(), g.captionFormat.Get(), g.iconFormat.Get()}) {
         f->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
@@ -655,7 +656,7 @@ void paint() {
         brush->SetColor(p.hover);
         g.target->FillRoundedRectangle(D2D1::RoundedRect(g.autoRowRect, 4.0f, 4.0f), brush.Get());
     }
-    drawText(L"Mulai bersama Windows", g.bodyFormat.Get(), D2D1::RectF(x, y, right - 48.0f, y + 40.0f), p.text);
+    drawText(L"Start with Windows", g.bodyFormat.Get(), D2D1::RectF(x, y, right - 48.0f, y + 40.0f), p.text);
     g.autoRect = D2D1::RectF(right - 40.0f, y + 10.0f, right, y + 30.0f);
     drawToggle(g.autoRect, g.autoKnob, g.hover == Focus::Autostart, g.keyboardFocus && g.focus == Focus::Autostart);
 
@@ -733,9 +734,9 @@ Focus hitTest(LPARAM lp) {
 
 void showMenu() {
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, kMenuOpen, L"Buka TabDisplay");
+    AppendMenuW(menu, MF_STRING, kMenuOpen, L"Open TabDisplay");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuExit, L"Keluar");
+    AppendMenuW(menu, MF_STRING, kMenuExit, L"Exit");
     POINT pt;
     GetCursorPos(&pt);
     SetForegroundWindow(g.hwnd);

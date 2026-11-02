@@ -7,29 +7,21 @@
 #include <string>
 #include <vector>
 
+#include "encoder.h"
 #include "nvEncodeAPI.h"
-#include "protocol.h"
 
 namespace td {
 
-struct EncoderParams {
-    Codec codec = Codec::HEVC;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    uint32_t fps = 60;
-    uint32_t bitrateKbps = 80000;
-};
-
-class NvEncoder {
+class NvEncoder : public VideoEncoder {
 public:
-    ~NvEncoder();
+    ~NvEncoder() override;
 
-    bool open(ID3D11Device* device, ID3D11Texture2D* input, const EncoderParams& params);
-    void close();
-    bool sequenceParams(std::vector<uint8_t>& out);
-    bool encode(bool forceIdr, uint64_t timestamp, std::vector<uint8_t>& out, bool& idr);
-
-    const std::string& error() const { return error_; }
+    bool open(ID3D11Device* device, ID3D11Texture2D* input, const EncoderParams& params) override;
+    void close() override;
+    bool sequenceParams(std::vector<uint8_t>& out) override;
+    bool encode(bool forceIdr, uint64_t timestamp, std::vector<uint8_t>& out, bool& idr) override;
+    const std::string& error() const override { return error_; }
+    const char* name() const override { return "NVENC"; }
 
 private:
     bool fail(const char* what, NVENCSTATUS status);

@@ -3,6 +3,7 @@ package com.nertz.tabdisplay
 import android.media.MediaCodecInfo
 import android.media.MediaCodecInfo.CodecCapabilities
 import android.media.MediaCodecList
+import android.os.Build
 import kotlin.math.floor
 
 class DecoderChoice(
@@ -41,17 +42,20 @@ object DecoderCaps {
             } else {
                 0
             }
-            val score = (if (info.isHardwareAccelerated) 8 else 0) +
-                (if (!info.isSoftwareOnly) 4 else 0) +
+            val software = isSoftware(info)
+            val hardware = isHardware(info, software)
+            val alias = isAlias(info)
+            val score = (if (hardware) 8 else 0) +
+                (if (!software) 4 else 0) +
                 (if (sized) 2 else 0) +
-                (if (!info.isAlias) 1 else 0)
+                (if (!alias) 1 else 0)
             if (score > bestScore) {
                 bestScore = score
                 choice = DecoderChoice(
                     codec = codec,
                     name = info.name,
-                    hardware = info.isHardwareAccelerated,
-                    lowLatency = caps.isFeatureSupported(CodecCapabilities.FEATURE_LowLatency),
+                    hardware = hardware,
+                    lowLatency = lowLatency(caps),
                     maxFps = maxFps.coerceIn(0, 0xffff),
                     maxWidth = video.supportedWidths.upper.coerceIn(0, 0xffff),
                     maxHeight = video.supportedHeights.upper.coerceIn(0, 0xffff),
@@ -60,4 +64,31 @@ object DecoderCaps {
         }
         return choice
     }
+
+    private fun isSoftware(info: MediaCodecInfo): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) return info.isSoftwareOnly
+        return softwareName(info.name)
+    }
+
+    private fun isHardware(info: MediaCodecInfo, software: Boolean): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) return info.isHardwareAccelerated
+        return !software
+    }
+
+    private fun isAlias(info: MediaCodecInfo): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) return info.isAlias
+        return false
+    }
+
+    private fun lowLatency(caps: CodecCapabilities): Boolean {
+        if (Build.VERSION.SDK_INT < 30) return false
+        return runCatching { caps.isFeatureSupported(CodecCapabilities.FEATURE_LowLatency) }.getOrDefault(false)
+    }
+
+    private fun softwareName(name: String): Boolean {
+        val n = name.lowercase()
+        return SOFTWARE_PREFIXES.any { n.startsWith(it) } || n.contains(".sw.") || n.endsWith("swvdec")
+    }
+
+    private val SOFTWARE_PREFIXES = listOf("omx.google.", "c2.android.", "omx.ffmpeg.", "c2.ffmpeg.")
 }

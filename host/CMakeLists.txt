@@ -10,6 +10,7 @@ add_library(tabdisplay_core STATIC
     src/display.cpp
     src/capture.cpp
     src/nvenc.cpp
+    src/mfenc.cpp
     src/net.cpp
     src/adb.cpp
     src/inject.cpp
@@ -26,7 +27,7 @@ target_compile_definitions(tabdisplay_core PUBLIC
     NTDDI_VERSION=0x0A000006
 )
 target_compile_options(tabdisplay_core PUBLIC /W4 /permissive- /utf-8 /EHsc)
-target_link_libraries(tabdisplay_core PUBLIC d3d11 dxgi ws2_32 winmm user32)
+target_link_libraries(tabdisplay_core PUBLIC d3d11 dxgi ws2_32 winmm user32 ole32 oleaut32 mfplat mfuuid strmiids)
 
 add_executable(tabdisplay-host src/main.cpp)
 target_link_libraries(tabdisplay-host PRIVATE tabdisplay_core)

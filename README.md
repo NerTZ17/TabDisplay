@@ -1,72 +1,90 @@
 # TabDisplay
 
-Prototipe monitor tambahan lewat kabel USB: PC Windows (RTX 3070) menjadikan Samsung Galaxy Tab S10 Ultra monitor ke-3 di resolusi native 2960×1848 dan 120 Hz, dengan sentuhan dan S Pen.
+Turn an Android tablet (or phone) into a real extra monitor for a Windows PC, over a USB cable, at the panel's native resolution and refresh rate, with touch and stylus input.
 
-## Cara kerja
+Built with [Claude](https://claude.ai) by **NerTZ – SONO Solutions** · [sono-solutions.com](https://sono-solutions.com)
 
-```
-Virtual Display Driver (IddCx, monitor ke-3)
-  -> DXGI Desktop Duplication (texture BGRA di GPU)
-  -> NVENC HEVC/H.264, preset P1, ultra-low-latency, CBR
-  -> TCP lewat adb forward (USB)
-  -> MediaCodec low-latency -> SurfaceView 120 Hz (tablet)
-  <- FrameAck, sentuhan, S Pen (tablet)
-  -> InjectSyntheticPointerInput (PC)
-```
+## The story
 
-- Codec dan fps dipilih otomatis dari kemampuan decoder tablet (HEVC@120 → HEVC@90 → HEVC@60 → H.264@60).
-- Maksimal 3 frame belum di-ack. Frame yang tidak sempat dikirim dilewati, bukan diantrekan, supaya latency tidak menumpuk.
-- Kursor tidak di-encode: bentuk dan posisinya dikirim terpisah dan digambar di tablet.
+I bought a Samsung tablet for work at the office. After a long stretch of working from home it mostly sat in a drawer, and one day I thought: why not make it a third monitor for my PC?
 
-## Struktur
+It turned out to be harder than it sounded:
 
-| Folder | Isi |
+1. **No Wi-Fi on my PC.** My desktop has no wireless adapter, so Samsung's built-in Second Screen (which is wireless only) could not even start.
+2. **Wireless adapters were not good enough.** I tried with an adapter anyway; the result lagged and stuttered too much for real work.
+3. **No wired option out of the box.** Samsung tablets have no built-in way to act as a wired display, and Windows cannot use a tablet as a monitor over USB on its own.
+4. **So I researched and built it with Claude.** I worked through the problem with Claude to connect the tablet over a cable as a proper extra monitor, pushing for the full native resolution and refresh rate.
+
+The result is TabDisplay. It runs well on my own setup every day: a Galaxy Tab S10 Ultra as a 2960×1848 @ 120 Hz third monitor, with touch and S Pen. If you need something added or changed, open an issue or reach out through [sono-solutions.com](https://sono-solutions.com) and I will try to build it properly.
+
+## Features
+
+- Extends the Windows desktop to the tablet as a real monitor (not a mirror), at the tablet's native resolution and up to its highest refresh rate.
+- Low latency: hardware H.265/HEVC or H.264 encoding on the PC, hardware decoding on the tablet, frames acknowledged one by one so lag never piles up.
+- Touch (10 fingers) and stylus with pressure, tilt, hover and side button, injected as real Windows touch and pen input; palm rejection while the pen is near.
+- The mouse cursor returns to where it was after you tap on the tablet.
+- Tray app with an On/Off switch. Plug the tablet in and the extra monitor appears and the tablet app opens by itself; unplug it and Windows goes back to your normal monitors.
+- Starts with Windows, remembers its state, recovers on its own from cable drops and app restarts.
+
+Measured on the author's PC (RTX 3070, Galaxy Tab S10 Ultra, USB 3): 120 fps at 2960×1848, about 21 ms from the PC to the tablet's screen and back.
+
+## Requirements
+
+| | |
 |---|---|
-| `host/` | Host Windows C++20 (CMake + Ninja, MSVC) |
-| `android/` | App Android Kotlin (`com.nertz.tabdisplay`) |
-| `docs/PROTOCOL.md` | Spesifikasi protokol v1 |
-| `docs/SETUP.md` | Install driver, build, jalankan, tuning |
+| Windows | Windows 10 (version 1903 or newer) or Windows 11, 64-bit |
+| PC graphics | A GPU with a hardware video encoder: NVIDIA (NVENC), or AMD / Intel through Media Foundation |
+| Virtual monitor | [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) (free, signed) |
+| adb | [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) |
+| Android | Android 8.0 or newer, tablet or phone, with USB debugging enabled |
+| Cable | A USB **data** cable, plugged directly into the PC (USB 3 recommended) |
 
-## Mulai cepat
+## Quick start
 
-Lihat [docs/SETUP.md](docs/SETUP.md).
+1. Install Virtual Display Driver and add your tablet's resolution and refresh rate to it.
+2. Build or download `TabDisplay.exe` and put the Platform-Tools files (`adb.exe`, `AdbWinApi.dll`, `AdbWinUsbApi.dll`) next to it.
+3. Install the TabDisplay APK on the tablet and enable USB debugging.
+4. Run `TabDisplay.exe`, plug the tablet in, and accept the USB debugging prompt.
 
-## Hasil uji yang sudah ada
+The full walkthrough, including how to find your tablet's resolution, is in **[docs/SETUP.md](docs/SETUP.md)**.
 
-Encoder di RTX 3070, mode `--bench --stress` pada monitor 2560×1080 (belum di 2960×1848 karena VDD belum terpasang):
+## How it works
 
-| Codec | Encode rata-rata | Throughput |
-|---|---|---|
-| HEVC | 2,3 ms | ±260 fps |
-| H.264 | 2,9 ms | ±127 fps (dibatasi target 120) |
+```
+Virtual Display Driver       a monitor Windows can extend the desktop to
+  -> DXGI Desktop Duplication  GPU texture of that monitor, no CPU copies
+  -> NVENC / Media Foundation  hardware HEVC or H.264, low-latency CBR
+  -> adb forward over USB      one TCP stream through the cable
+  -> Android MediaCodec        hardware decoder, rendered straight to the screen
+  <- acknowledgements, touch and pen
+  -> InjectSyntheticPointerInput  real Windows touch and pen events
+```
 
-2960×1848 punya ±2× piksel, jadi perkiraan encode ±4,5–6 ms per frame, masih di bawah anggaran 8,3 ms untuk 120 fps.
+The wire protocol is documented in [docs/PROTOCOL.md](docs/PROTOCOL.md).
 
-End-to-end ke Tab S10 Ultra (SM-X920, Android 16, MT6989) lewat `adb forward`, sumber monitor 1920×1080 (VDD belum terpasang):
+## Project layout
 
-| Setting | fps diterima tablet | RTT | Decode tablet |
-|---|---|---|---|
-| HEVC, inflight 2 | 88–108 | 16–21 ms | 10–13 ms |
-| HEVC, inflight 3, pacing tetap | 120 | 20–21 ms | 11,5 ms |
-| H.264, inflight 3 | 117–118 | 18–19 ms | 11 ms |
+| Folder | Contents |
+|---|---|
+| `host/` | Windows app (C++20, CMake). `TabDisplay.exe` is the tray app, `tabdisplay-host.exe` the console version for debugging and benchmarks |
+| `android/` | Android app (Kotlin, package `com.nertz.tabdisplay`) |
+| `docs/` | Setup guide and protocol |
 
-Native, monitor VDD 2960×1848 @ 120 Hz (Virtual Display Driver 25.7.23), sumber animasi canvas 120 fps:
+## Limitations
 
-| Codec | fps diterima tablet | RTT | Decode tablet | Encode PC | Bitrate |
-|---|---|---|---|---|---|
-| HEVC, inflight 3 | 119–120 | 21–21,6 ms | 12–12,4 ms | 4,2–4,5 ms | ±31 Mbps |
+- **Netflix and other DRM video show black.** Protected video is blanked by Windows in every screen-capture path, and a virtual monitor has no HDCP. This is by design and TabDisplay does not work around it; use the streaming app on the tablet itself.
+- USB debugging must stay enabled on the tablet.
+- No audio forwarding yet.
+- Tested on one PC and one tablet so far. Reports from other hardware are welcome.
 
-NVENC di 2960×1848 (`--bench --stress`): ±273 fps, rata-rata 3,0 ms saat GPU di clock penuh.
+## Credits
 
-Decoder tablet: `c2.mtk.hevc.decoder` melaporkan maks 389 fps di 2960×1848, `c2.mtk.avc.decoder` 193 fps. Panel punya mode 30/60/120 Hz. Bagian terbesar latency adalah decode di tablet (±11 ms).
+- Built with [Claude](https://claude.ai) by Anthropic, as a research and coding partner.
+- [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) for the virtual monitor.
+- NVIDIA Video Codec SDK header via [FFmpeg/nv-codec-headers](https://github.com/FFmpeg/nv-codec-headers). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## Aplikasi PC
+## License
 
-- `TabDisplay.exe`: aplikasi tray ala flyout Windows 11 dengan sakelar On/Off, status, dan "Mulai bersama Windows". Monitor 3 dipasang saat tablet tersambung dan dilepas saat dicabut atau dimatikan; app tablet dibuka otomatis lewat adb.
-- `tabdisplay-host.exe`: versi console untuk debug dan benchmark.
+MIT © 2026 NerTZ – SONO Solutions. See [LICENSE](LICENSE).
 
-## Belum termasuk
-
-- AOAP (USB tanpa USB debugging)
-- Audio
-- Pipelining encode async (perlu kalau encode 3K mendekati 8 ms)
+TabDisplay is an independent project and is not affiliated with Samsung, Microsoft, NVIDIA, Google or Anthropic.

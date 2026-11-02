@@ -8,11 +8,13 @@
 #include <cstdio>
 #include <cwctype>
 
+#include <objbase.h>
+
 #include "adb.h"
 #include "display.h"
+#include "encoder.h"
 #include "inject.h"
 #include "net.h"
-#include "nvenc.h"
 #include "stats.h"
 
 namespace td {
@@ -65,7 +67,7 @@ bool makeFrameTexture(ID3D11Device* device, uint32_t w, uint32_t h, ComPtr<ID3D1
     desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
     desc.SampleDesc.Count = 1;
     desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     tex.Reset();
     return SUCCEEDED(device->CreateTexture2D(&desc, nullptr, &tex));
 }
@@ -313,6 +315,44 @@ void receiveLoop(SessionShared& s) {
 
 }
 
+std::unique_ptr<VideoEncoder> openBestEncoder(ID3D11Device* device, ID3D11Texture2D* frame, uint32_t vendorId, const Options& o,
+                                              const ClientHello* hello, EncoderParams& params) {
+    std::vector<EncoderKind> kinds;
+    if (o.encoder == L"nvenc") {
+        kinds = {EncoderKind::Nvenc};
+    } else if (o.encoder == L"mf") {
+        kinds = {EncoderKind::MediaFoundation};
+    } else if (vendorId == 0x10DE) {
+        kinds = {EncoderKind::Nvenc, EncoderKind::MediaFoundation};
+    } else {
+        kinds = {EncoderKind::MediaFoundation};
+    }
+    std::vector<Codec> codecs = {params.codec};
+    if (o.codec == L"auto" && params.codec == Codec::HEVC) {
+        codecs.push_back(Codec::H264);
+    }
+    for (EncoderKind kind : kinds) {
+        for (Codec codec : codecs) {
+            EncoderParams p = params;
+            p.codec = codec;
+            if (codec == Codec::H264 && params.codec != Codec::H264 && hello && !o.force) {
+                const CodecCaps* avc = findCaps(*hello, Codec::H264);
+                if (avc && avc->maxFps > 0 && avc->maxFps < p.fps) {
+                    p.fps = avc->maxFps;
+                }
+            }
+            std::unique_ptr<VideoEncoder> enc = createEncoder(kind);
+            if (enc->open(device, frame, p)) {
+                params = p;
+                std::printf("encoder: %s %s\n", enc->name(), codec == Codec::HEVC ? "HEVC" : "H.264");
+                return enc;
+            }
+            std::printf("encoder: %s %s unavailable: %s\n", enc->name(), codec == Codec::HEVC ? "HEVC" : "H.264", enc->error().c_str());
+        }
+    }
+    return nullptr;
+}
+
 Engine::Engine(Options options) : o_(std::move(options)) {}
 
 Engine::~Engine() { stop(); }
@@ -390,6 +430,7 @@ void Engine::releaseCapture() {
 
 void Engine::run() {
     inRun_ = true;
+    HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     timeBeginPeriod(1);
     {
         NetInit net;
@@ -400,6 +441,9 @@ void Engine::run() {
         setMonitor(false);
     }
     timeEndPeriod(1);
+    if (SUCCEEDED(com)) {
+        CoUninitialize();
+    }
     setState(EngineState::Off);
     inRun_ = false;
 }
@@ -408,7 +452,7 @@ void Engine::loop() {
     if (!o_.noAdb) {
         adb_ = findAdb();
         if (adb_.empty()) {
-            setState(EngineState::Error, L"adb.exe tidak ditemukan");
+            setState(EngineState::Error, L"adb.exe not found: put Android platform-tools next to TabDisplay.exe");
             while (!stop_) {
                 Sleep(200);
             }
@@ -425,11 +469,11 @@ void Engine::loop() {
                 releaseCapture();
                 setMonitor(false);
                 if (state == "offline" || state == "timeout") {
-                    setState(EngineState::TabletProblem, L"adb tidak merespons: nyalakan ulang USB debugging");
+                    setState(EngineState::TabletProblem, L"adb not responding: toggle USB debugging on the tablet");
                 } else if (state == "unauthorized") {
-                    setState(EngineState::TabletProblem, L"Izinkan USB debugging di tablet");
+                    setState(EngineState::TabletProblem, L"Allow USB debugging on the tablet");
                 } else if (state == "multiple") {
-                    setState(EngineState::TabletProblem, L"Lebih dari satu perangkat Android tersambung");
+                    setState(EngineState::TabletProblem, L"More than one Android device connected");
                 } else {
                     setState(EngineState::NoTablet);
                 }
@@ -446,12 +490,7 @@ void Engine::loop() {
         std::vector<OutputInfo> outputs = listOutputs();
         const OutputInfo* out = selectOutput(outputs, o_);
         if (!out) {
-            setState(EngineState::Error, L"Monitor virtual tidak ditemukan");
-            Sleep(1000);
-            continue;
-        }
-        if (out->vendorId != 0x10DE) {
-            setState(EngineState::Error, L"Monitor virtual tidak dirender oleh GPU NVIDIA");
+            setState(EngineState::Error, L"Virtual monitor not found: install Virtual Display Driver");
             Sleep(1000);
             continue;
         }
@@ -461,7 +500,7 @@ void Engine::loop() {
             output_ = *out;
             if (!capture_.open(output_) || !makeFrameTexture(capture_.device(), capture_.width(), capture_.height(), frame_)) {
                 releaseCapture();
-                setState(EngineState::Error, L"Gagal menangkap monitor virtual");
+                setState(EngineState::Error, L"Cannot capture the virtual monitor");
                 Sleep(1000);
                 continue;
             }
@@ -490,7 +529,7 @@ void Engine::loop() {
                 setState(EngineState::OpeningApp);
                 launchedForDevice_ = adbLaunchApp(adb_, o_.serial);
             } else {
-                setState(EngineState::OpeningApp, L"Buka app TabDisplay di tablet");
+                setState(EngineState::OpeningApp, L"Open TabDisplay on the tablet");
             }
             for (int i = 0; i < 10 && !stop_; ++i) {
                 Sleep(100);
@@ -517,13 +556,13 @@ bool Engine::streamSession() {
         std::printf("note: monitor is %ux%u but the tablet panel is %ux%u\n", capture_.width(), capture_.height(), hello.width, hello.height);
     }
     EncoderParams params = chooseStream(hello, o_, output_.refreshHz, capture_.width(), capture_.height());
-    NvEncoder enc;
-    if (!enc.open(capture_.device(), frame_.Get(), params)) {
-        std::fprintf(stderr, "encoder: %s\n", enc.error().c_str());
-        setState(EngineState::Error, L"Encoder NVENC gagal dibuka");
+    std::unique_ptr<VideoEncoder> encoder = openBestEncoder(capture_.device(), frame_.Get(), output_.vendorId, o_, &hello, params);
+    if (!encoder) {
+        setState(EngineState::Error, L"No hardware video encoder available on this GPU");
         Sleep(1000);
         return true;
     }
+    VideoEncoder& enc = *encoder;
     std::printf("streaming %s %ux%u @ %u fps, %u Mbps, inflight %d\n", params.codec == Codec::HEVC ? "HEVC" : "H.264", params.width,
                 params.height, params.fps, params.bitrateKbps / 1000, o_.maxInFlight);
     std::fflush(stdout);
@@ -533,6 +572,7 @@ bool Engine::streamSession() {
         status_.height = params.height;
         status_.fps = params.fps;
         status_.hevc = params.codec == Codec::HEVC;
+        status_.encoder = enc.name();
     }
     setState(EngineState::Streaming);
     conn.send(Writer(Msg::StreamConfig)
@@ -619,6 +659,10 @@ bool Engine::streamSession() {
                 break;
             }
             uint64_t took = nowUs() - t0;
+            pending = false;
+            if (bits.empty()) {
+                continue;
+            }
             if (!conn.send(videoMessage(frameId++, t0, idr ? kFrameIdr : 0, bits))) {
                 break;
             }
@@ -650,7 +694,7 @@ bool Engine::streamSession() {
     conn.close();
     receiver.join();
     injector.close();
-    enc.close();
+    encoder.reset();
     std::printf("session ended\n");
     std::fflush(stdout);
     return true;

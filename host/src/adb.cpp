@@ -7,6 +7,16 @@
 namespace td {
 
 std::wstring findAdb() {
+    wchar_t self[MAX_PATH];
+    DWORD len = GetModuleFileNameW(nullptr, self, MAX_PATH);
+    if (len > 0 && len < MAX_PATH) {
+        std::filesystem::path dir = std::filesystem::path(self).parent_path();
+        for (const auto& candidate : {dir / L"adb.exe", dir / L"platform-tools" / L"adb.exe"}) {
+            if (std::filesystem::exists(candidate)) {
+                return candidate.wstring();
+            }
+        }
+    }
     wchar_t found[MAX_PATH];
     if (SearchPathW(nullptr, L"adb.exe", nullptr, MAX_PATH, found, nullptr) > 0) {
         return found;

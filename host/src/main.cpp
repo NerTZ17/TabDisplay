@@ -11,7 +11,7 @@
 #include "capture.h"
 #include "display.h"
 #include "engine.h"
-#include "nvenc.h"
+#include "encoder.h"
 #include "stats.h"
 
 using namespace td;
@@ -27,6 +27,7 @@ void usage() {
         "  --list                 list monitors and exit\n"
         "  --monitor <name>       \\\\.\\DISPLAYn or part of the monitor name (default: first VDD/virtual monitor)\n"
         "  --codec auto|hevc|h264 codec choice (default auto)\n"
+        "  --encoder auto|nvenc|mf  video encoder (default auto: NVENC on NVIDIA, Media Foundation otherwise)\n"
         "  --fps <n>              target frame rate (default: monitor refresh rate)\n"
         "  --bitrate <mbps>       bitrate in Mbps (default 80)\n"
         "  --inflight <n>         frames allowed without ack (default 3)\n"
@@ -84,6 +85,8 @@ bool parseArgs(int argc, wchar_t** argv, Options& o) {
             o.serial = v;
         } else if (a == L"--codec" && next(v)) {
             o.codec = lower(v);
+        } else if (a == L"--encoder" && next(v)) {
+            o.encoder = lower(v);
         } else if (a == L"--dump" && next(v)) {
             o.dumpPath = v;
         } else if (a == L"--fps" && next(v)) {
@@ -100,7 +103,9 @@ bool parseArgs(int argc, wchar_t** argv, Options& o) {
             return false;
         }
     }
-    return o.codec == L"auto" || o.codec == L"hevc" || o.codec == L"h264";
+    bool codecOk = o.codec == L"auto" || o.codec == L"hevc" || o.codec == L"h264";
+    bool encoderOk = o.encoder == L"auto" || o.encoder == L"nvenc" || o.encoder == L"mf";
+    return codecOk && encoderOk;
 }
 
 void printOutputs(const std::vector<OutputInfo>& outputs) {
@@ -133,13 +138,15 @@ int runBench(const Options& o) {
     p.height = capture.height();
     p.fps = o.fps ? o.fps : (out->refreshHz ? out->refreshHz : 60);
     p.bitrateKbps = o.bitrateKbps;
-    NvEncoder enc;
-    if (!enc.open(capture.device(), frame.Get(), p)) {
-        std::fprintf(stderr, "bench: %s\n", enc.error().c_str());
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    std::unique_ptr<VideoEncoder> encoder = openBestEncoder(capture.device(), frame.Get(), out->vendorId, o, nullptr, p);
+    if (!encoder) {
+        std::fprintf(stderr, "bench: no hardware encoder available\n");
         return 1;
     }
-    std::printf("bench: %s %ux%u @ %u fps, %u Mbps, %d s%s\n", p.codec == Codec::HEVC ? "HEVC" : "H.264", p.width, p.height, p.fps,
-                p.bitrateKbps / 1000, o.benchSeconds, o.stress ? ", stress" : "");
+    VideoEncoder& enc = *encoder;
+    std::printf("bench: %s %s %ux%u @ %u fps, %u Mbps, %d s%s\n", enc.name(), p.codec == Codec::HEVC ? "HEVC" : "H.264", p.width, p.height,
+                p.fps, p.bitrateKbps / 1000, o.benchSeconds, o.stress ? ", stress" : "");
     FILE* dump = nullptr;
     if (!o.dumpPath.empty()) {
         if (_wfopen_s(&dump, o.dumpPath.c_str(), L"wb") != 0) {

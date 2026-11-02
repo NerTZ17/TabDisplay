@@ -1,5 +1,6 @@
 package com.nertz.tabdisplay
 
+import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
 import android.view.InputDevice
@@ -36,7 +37,9 @@ class InputSender(private val view: View, private val handler: Handler) : View.O
     init {
         view.setOnTouchListener(this)
         view.setOnHoverListener(this)
-        view.post { view.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER) }
+        if (Build.VERSION.SDK_INT >= 30) {
+            view.post { view.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER) }
+        }
     }
 
     @Suppress("ClickableViewAccessibility")
@@ -130,15 +133,15 @@ class InputSender(private val view: View, private val handler: Handler) : View.O
         if (h < 0) {
             x = e.getX(p)
             y = e.getY(p)
-            pressure = e.getPressure(p)
-            tilt = e.getAxisValue(MotionEvent.AXIS_TILT, p)
-            orientation = e.getAxisValue(MotionEvent.AXIS_ORIENTATION, p)
+            pressure = finite(e.getPressure(p))
+            tilt = finite(e.getAxisValue(MotionEvent.AXIS_TILT, p))
+            orientation = finite(e.getAxisValue(MotionEvent.AXIS_ORIENTATION, p))
         } else {
             x = e.getHistoricalX(p, h)
             y = e.getHistoricalY(p, h)
-            pressure = e.getHistoricalPressure(p, h)
-            tilt = e.getHistoricalAxisValue(MotionEvent.AXIS_TILT, p, h)
-            orientation = e.getHistoricalAxisValue(MotionEvent.AXIS_ORIENTATION, p, h)
+            pressure = finite(e.getHistoricalPressure(p, h))
+            tilt = finite(e.getHistoricalAxisValue(MotionEvent.AXIS_TILT, p, h))
+            orientation = finite(e.getHistoricalAxisValue(MotionEvent.AXIS_ORIENTATION, p, h))
         }
         val barrel = if (e.buttonState and (MotionEvent.BUTTON_STYLUS_PRIMARY or MotionEvent.BUTTON_SECONDARY) != 0) Protocol.PEN_BARREL else 0
         val f = base or barrel or eraserBit()
@@ -160,6 +163,8 @@ class InputSender(private val view: View, private val handler: Handler) : View.O
         penContact = false
         penLastMs = SystemClock.uptimeMillis()
     }
+
+    private fun finite(v: Float): Float = if (v.isFinite()) v else 0f
 
     private fun eraserBit() = if (penEraser) Protocol.PEN_ERASER else 0
 
@@ -229,12 +234,12 @@ class InputSender(private val view: View, private val handler: Handler) : View.O
 
     private fun normX(x: Float): Int {
         val w = view.width
-        return if (w <= 0) 0 else ((x / w).coerceIn(0f, 1f) * 65535f).roundToInt()
+        return if (w <= 0 || !x.isFinite()) 0 else ((x / w).coerceIn(0f, 1f) * 65535f).roundToInt()
     }
 
     private fun normY(y: Float): Int {
         val h = view.height
-        return if (h <= 0) 0 else ((y / h).coerceIn(0f, 1f) * 65535f).roundToInt()
+        return if (h <= 0 || !y.isFinite()) 0 else ((y / h).coerceIn(0f, 1f) * 65535f).roundToInt()
     }
 
     private companion object {

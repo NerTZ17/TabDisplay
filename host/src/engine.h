@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -16,6 +17,7 @@ struct Options {
     std::wstring monitor;
     std::wstring serial;
     std::wstring codec = L"auto";
+    std::wstring encoder = L"auto";
     std::wstring dumpPath;
     uint32_t fps = 0;
     uint32_t bitrateKbps = 80000;
@@ -41,6 +43,7 @@ struct EngineStatus {
     uint32_t height = 0;
     uint32_t fps = 0;
     bool hevc = true;
+    std::string encoder;
     double ackFps = 0;
     double rttMs = 0;
     double mbps = 0;
@@ -52,6 +55,11 @@ std::wstring monitorMatch(const Options& o);
 const OutputInfo* selectOutput(const std::vector<OutputInfo>& outputs, const Options& o);
 bool makeFrameTexture(ID3D11Device* device, uint32_t w, uint32_t h, ComPtr<ID3D11Texture2D>& tex);
 bool acquireSingleInstance();
+
+class VideoEncoder;
+struct EncoderParams;
+std::unique_ptr<VideoEncoder> openBestEncoder(ID3D11Device* device, ID3D11Texture2D* frame, uint32_t vendorId, const Options& o,
+                                              const ClientHello* hello, EncoderParams& params);
 
 class Engine {
 public:

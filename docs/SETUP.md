@@ -1,130 +1,155 @@
-# Setup: Tab S10 Ultra sebagai monitor ke-3 lewat kabel
+# TabDisplay setup guide
 
-## 1. Monitor virtual di Windows (Virtual Display Driver)
+This guide takes you from nothing to a working wired extra monitor. It takes about 20 minutes the first time.
 
-1. Download rilis terbaru **Virtual Display Driver** dari GitHub `VirtualDrivers/Virtual-Display-Driver` (installer atau paket "Virtual Driver Control").
-2. Install sesuai petunjuk di halaman rilis. Driver ini sudah ditandatangani, jadi tidak perlu test-signing.
-3. Tambahkan mode **2960×1848 @ 120 Hz** di daftar resolusi VDD:
-   - lewat aplikasi Virtual Driver Control, atau
-   - edit `vdd_settings.xml` (lokasi ditunjukkan aplikasi kontrolnya), tambah entri resolusi `2960 × 1848` dengan refresh `120`, lalu reload/restart driver.
-4. Settings → System → Display:
-   - pilih monitor virtual, set **Extend these displays**,
-   - resolusi **2960 × 1848**, scale sesuai selera (misalnya 200%),
-   - Advanced display → refresh rate **120 Hz**,
-   - atur posisinya terhadap 2 monitor fisik.
-5. Cek dari PC:
+## 1. What you need
 
-   ```bash
-   host\build\tabdisplay-host.exe --list
+- A Windows 10 (1903+) or Windows 11 64-bit PC with an NVIDIA, AMD or Intel GPU.
+- An Android 8.0+ tablet or phone.
+- A USB **data** cable. Many charging cables only carry power or USB 2.0 data; a USB 3 C-to-C or A-to-C data cable gives the best results.
+
+## 2. Prepare the tablet
+
+1. Open **Settings → About tablet → Software information** and tap **Build number** seven times to unlock Developer options. (On non-Samsung devices it is usually **Settings → About phone → Build number**.)
+2. Open **Settings → Developer options** and turn on **USB debugging**.
+3. Find the tablet's screen resolution and refresh rate. Two easy ways:
+   - Run the TabDisplay app once (step 4); with the PC host running, its log prints a line like `tablet: 2960x1848, max 120 Hz`.
+   - Or look up your model's display specs. Use the landscape orientation, larger number first.
+4. On Samsung devices, set **Settings → Display → Motion smoothness** to **Adaptive** (or High) so 120 Hz modes are available.
+
+## 3. Prepare the PC
+
+### 3.1 Platform-Tools (adb)
+
+1. Download [Android SDK Platform-Tools](https://developer.android.com/tools/releases/platform-tools) for Windows and unzip it.
+2. Copy `adb.exe`, `AdbWinApi.dll` and `AdbWinUsbApi.dll` into the same folder as `TabDisplay.exe` (or keep the whole `platform-tools` folder next to it). TabDisplay also finds adb on `PATH` or in `%LOCALAPPDATA%\Android\Sdk\platform-tools`.
+
+### 3.2 Virtual Display Driver
+
+TabDisplay needs a monitor for Windows to extend the desktop to. Virtual Display Driver provides one.
+
+1. Download the latest release of [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases) (the **Virtual Driver Control** package) and install the display driver from it. Windows asks for administrator approval.
+2. Open `C:\VirtualDisplayDriver\vdd_settings.xml` and make the resolution list match your tablet, for example for a 2960×1848 @ 120 Hz panel:
+
+   ```xml
+   <vdd_settings>
+       <monitors>
+           <count>1</count>
+       </monitors>
+       <gpu>
+           <friendlyname>default</friendlyname>
+       </gpu>
+       <global>
+           <g_refresh_rate>60</g_refresh_rate>
+           <g_refresh_rate>120</g_refresh_rate>
+       </global>
+       <resolutions>
+           <resolution>
+               <width>2960</width>
+               <height>1848</height>
+               <refresh_rate>120</refresh_rate>
+           </resolution>
+       </resolutions>
+   </vdd_settings>
    ```
 
-   Monitor VDD harus muncul dengan `2960x1848 @ 120 Hz` dan `on NVIDIA GeForce RTX 3070`.
+3. Reload the driver (Virtual Driver Control → Reload, or disable and enable "Virtual Display Driver" in Device Manager).
+4. In **Settings → System → Display**, select the new monitor and:
+   - set **Extend these displays**,
+   - pick your tablet's resolution and a scale you like,
+   - under **Advanced display**, pick the highest refresh rate,
+   - drag it to where the tablet physically sits next to your other monitors.
 
-Kalau namanya tidak mengandung "VDD" atau "Virtual", pilih manual dengan `--monitor \\.\DISPLAYn`.
+TabDisplay remembers this layout: it detaches the virtual monitor when the tablet is unplugged and restores it, with the same position and mode, when the tablet comes back.
 
-Instalasi di PC ini (2 November 2026): Virtual Display Driver 25.7.23 (paket `VDD.Control.25.7.23.zip`, SHA-256 `a701f227…9154`) dipasang dengan `devcon install MttVDD.inf Root\MttVDD`. Konfigurasi ada di `C:\VirtualDisplayDriver\vdd_settings.xml` (mode 2960×1848, 1920×1200, 1920×1080; refresh 60 dan 120). Monitor muncul sebagai `\\.\DISPLAY6` "VDD by MTT", 2960×1848 @ 120 Hz, di kanan monitor MSI.
+### 3.3 Build TabDisplay
 
-Lepas driver: app VDD Control (Uninstall), atau Device Manager → Display adapters → Virtual Display Driver → Uninstall device.
-
-## 2. Tablet
-
-1. Settings → About tablet → Software information → ketuk **Build number** 7 kali.
-2. Developer options → aktifkan **USB debugging**.
-3. Sambungkan kabel USB-C ke port **USB 3** di PC (port biru / USB-C di motherboard, hindari hub).
-4. Izinkan dialog "Allow USB debugging" (centang "Always allow").
-5. Cek:
-
-   ```bash
-   adb devices
-   ```
-
-## 3. Build
-
-Host Windows:
+Requirements: Visual Studio 2022 or newer (Build Tools are enough) with the **Desktop development with C++** workload, and the Windows 10/11 SDK.
 
 ```bash
 host\build.cmd
 ```
 
-APK Android:
+The output is in `host\build\`: `TabDisplay.exe` (tray app) and `tabdisplay-host.exe` (console).
+
+### 3.4 Build and install the Android app
+
+Requirements: Android Studio (or the Android SDK with JDK 17+).
 
 ```bash
 cd android && gradlew.bat assembleDebug
 ```
 
-Install ke tablet:
+Install it with the tablet connected:
 
 ```bash
 adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
-## 4. Pemakaian sehari-hari (aplikasi tray)
+## 4. Daily use
 
-`host\build\TabDisplay.exe` adalah aplikasi tray. Cukup jalankan sekali; setelah itu ia ikut berjalan saat login Windows (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, nilai `TabDisplay`, argumen `--background`).
+1. Run `TabDisplay.exe` once. It adds itself to Windows startup and lives in the system tray (click the **^** on the taskbar if the icon is hidden; drag it out to keep it visible).
+2. Plug the tablet in and accept **Allow USB debugging** on the tablet (tick **Always allow**).
+3. TabDisplay attaches the virtual monitor, opens the app on the tablet and starts streaming.
 
-| Situasi | Yang terjadi |
+| Situation | What happens |
 |---|---|
-| Sakelar **On**, tablet dicolok | Monitor 3 dipasang di posisi terakhir, app TabDisplay di tablet dibuka (sekali per colok), streaming jalan |
-| Tablet dicabut | Monitor 3 dilepas, PC kembali ke 2 layar |
-| Sakelar **Off** | Streaming berhenti, monitor 3 dilepas |
-| Klik ikon tray | Buka/tutup panel |
-| Klik kanan ikon tray → Keluar | Streaming berhenti, monitor 3 dilepas, aplikasi keluar |
+| Switch **On**, tablet plugged in | Virtual monitor attached, tablet app opened (once per plug-in), streaming |
+| Tablet unplugged | Virtual monitor detached, Windows returns to your other monitors |
+| Switch **Off** | Streaming stops, virtual monitor detached |
+| Click the tray icon | Open or close the panel |
+| Right-click the tray icon → Exit | Stop everything and quit |
 
-Warna titik pada ikon tray: hijau tersambung, kuning menunggu, merah ada masalah, tanpa titik berarti mati. Status On/Off terakhir dan pilihan "Mulai bersama Windows" diingat (`HKCU\Software\NerTZ\TabDisplay`). Log ada di `%LOCALAPPDATA%\TabDisplay\tabdisplay.log`.
+Tray icon dot: green connected, yellow waiting, red needs attention, no dot off. The info button in the panel shows latency, frame rate, bitrate, codec and encoder.
 
-Hanya satu dari `TabDisplay.exe` atau `tabdisplay-host.exe` yang bisa berjalan pada satu waktu.
+Settings live in `HKCU\Software\NerTZ\TabDisplay`; the startup entry is `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TabDisplay`. The log is `%LOCALAPPDATA%\TabDisplay\tabdisplay.log`.
 
-## 5. Jalankan dari console (debug)
+Only one of `TabDisplay.exe` or `tabdisplay-host.exe` can run at a time.
 
-1. Buka app **TabDisplay** di tablet. Layar menunjukkan status menunggu PC.
-2. Di PC:
+## 5. Console host (debugging)
 
-   ```bash
-   host\build\tabdisplay-host.exe
-   ```
+```bash
+host\build\tabdisplay-host.exe --log-input
+```
 
-   Host menjalankan `adb forward tcp:27183 tcp:27183`, menghubungi app, memilih codec dan fps dari kemampuan decoder tablet, lalu mulai streaming.
-3. Tombol **volume turun** di tablet: tampilkan/sembunyikan statistik.
-4. `Ctrl+C` di PC untuk berhenti.
-
-## Opsi host
-
-| Opsi | Fungsi |
+| Option | Meaning |
 |---|---|
-| `--list` | Daftar monitor |
-| `--monitor <nama>` | `\\.\DISPLAYn` atau bagian nama monitor |
-| `--codec auto\|hevc\|h264` | Pilih codec (default `auto`) |
-| `--fps <n>` | Target fps (default refresh monitor) |
-| `--bitrate <mbps>` | Bitrate CBR (default 80) |
-| `--inflight <n>` | Frame tanpa ack yang diizinkan (default 3; 2 membatasi ke ±100 fps karena RTT ±20 ms) |
-| `--force` | Abaikan batas decoder yang dilaporkan tablet |
-| `--serial <id>` | Serial adb kalau ada beberapa perangkat |
-| `--no-adb` | Jangan jalankan `adb forward` |
-| `--log-input` | Tampilkan event sentuhan dan pena dari tablet |
-| `--keep-monitor` | Jangan lepas/pasang monitor 3 otomatis |
-| `--no-launch` | Jangan buka app tablet otomatis |
-| `--monitor-on` / `--monitor-off` | Pasang / lepas monitor 3 lalu keluar |
-| `--no-cursor-restore` | Jangan kembalikan kursor mouse ke posisi sebelum tap (default: dikembalikan 80 ms setelah jari/pena diangkat) |
-| `--bench <detik>` | Uji capture + encode tanpa tablet |
-| `--stress` | Dengan `--bench`: encode terus walau layar diam |
-| `--dump <file>` | Dengan `--bench`: simpan stream ke file |
+| `--list` | List monitors |
+| `--monitor <name>` | `\\.\DISPLAYn` or part of the monitor name (default: the first VDD/virtual monitor) |
+| `--codec auto\|hevc\|h264` | Codec (default `auto`: HEVC when the tablet decodes it at the target rate, else H.264) |
+| `--encoder auto\|nvenc\|mf` | Encoder (default `auto`: NVENC on NVIDIA, Media Foundation otherwise or as fallback) |
+| `--fps <n>` | Target frame rate (default: monitor refresh rate) |
+| `--bitrate <mbps>` | CBR bitrate (default 80) |
+| `--inflight <n>` | Frames allowed without acknowledgement (default 3) |
+| `--force` | Ignore decoder limits reported by the tablet |
+| `--serial <id>` | adb serial when several devices are connected |
+| `--no-adb` | Do not use adb (forward port 27183 yourself) |
+| `--keep-monitor` | Do not attach/detach the virtual monitor |
+| `--no-launch` | Do not open the tablet app automatically |
+| `--monitor-on` / `--monitor-off` | Attach / detach the virtual monitor and exit |
+| `--log-input` | Print touch and pen events |
+| `--no-cursor-restore` | Leave the mouse cursor where a tablet tap moved it |
+| `--bench <seconds>` | Capture and encode locally, no tablet needed |
+| `--stress` | With `--bench`: encode at the target rate even when the screen is static |
+| `--dump <file>` | With `--bench`: write the encoded stream to a file |
 
-## Tuning resolusi dan refresh maksimum
+The console prints one line per second: captured and encoded fps, encode time, Mbps, skipped frames, frames in flight, round-trip time and tablet decode time.
 
-- Log host per detik: `cap` (frame dari Windows), `enc` (frame terkirim), `ms` encode, Mbps, `skip` (frame dilewati karena flow control), `rtt` (PC → tablet tampil → ack), `decode`.
-- Kalau host menulis `decoder reports max N fps ... capping`, decoder tablet melaporkan batas di bawah 120. Batas ini sering konservatif: coba `--force` dan lihat `ack fps` di log.
-- Kalau `skip` tinggi dan `rtt` naik, decoder atau USB tidak mengejar: turunkan `--bitrate`, atau coba `--codec h264`.
-- `cap` di bawah 120 saat ada gerakan berarti Windows tidak menyajikan monitor virtual di 120 Hz: cek refresh rate di Advanced display.
-- Teks lebih tajam: naikkan `--bitrate` (misalnya 120–150).
-- Encode melambat saat layar jarang berubah (GPU turun clock; terukur 2 ms → 6,5 ms di 24 fps). Untuk latency stabil: NVIDIA Control Panel → Manage 3D settings → Program Settings → tambah `tabdisplay-host.exe` → Power management mode **Prefer maximum performance**.
+## 6. Tuning
 
-## Masalah umum
+- **Sharper text:** raise `--bitrate` (100–150).
+- **Lower or steadier latency on NVIDIA:** NVIDIA Control Panel → Manage 3D settings → Program Settings → add `TabDisplay.exe` → Power management mode **Prefer maximum performance**. Otherwise the GPU clocks down when the screen is quiet and encoding gets slower.
+- **Tablet shows fewer fps than expected:** check the virtual monitor's refresh rate in Windows, Motion smoothness on the tablet, and whether the log says `decoder reports max N fps ... capping` (try `--force`).
+- **Resolution mismatch:** if the virtual monitor and the tablet differ, the picture is letterboxed. Set the virtual monitor to the tablet's exact resolution for 1:1 pixels.
 
-| Gejala | Penyebab | Solusi |
+## 7. Troubleshooting
+
+| Symptom | Cause | Fix |
 |---|---|---|
-| `no matching monitor` | VDD belum aktif / nama beda | `--list`, lalu `--monitor` |
-| `NVENC needs it on the NVIDIA GPU` | Monitor virtual dirender adapter lain | Set GPU render VDD ke RTX 3070 di pengaturan VDD |
-| `adb forward failed` | Tablet belum diizinkan / kabel | `adb devices`, izinkan dialog di tablet |
-| `waiting for the tablet app` terus | App belum dibuka | Buka TabDisplay di tablet |
-| `session ended` lalu `device 'xxx' not found`, berulang | Link USB reset (log tablet: `UsbFfs: connection terminated: Error while reading USB block`), biasanya karena hub/port depan/kabel charger | Colok langsung ke port USB belakang motherboard dengan kabel data USB 3; di PC ini 6 putus/8 menit lewat hub VIA VL817 menjadi 0 putus/3 menit setelah dipindah |
-| `driver supports NVENC API ...` | Driver NVIDIA terlalu lama | Update driver NVIDIA |
+| Panel says "adb not responding" or adb shows `offline` | adb on the tablet got stuck after a USB reset | Toggle USB debugging off and on, or unplug and replug |
+| Panel says "Allow USB debugging on the tablet" | The PC is not authorised yet | Accept the prompt on the tablet, tick **Always allow** |
+| Repeated disconnects | USB hub, front-panel port or a charging-only cable | Plug directly into a rear motherboard port with a USB 3 data cable |
+| "Virtual monitor not found" | Virtual Display Driver missing or disabled | Install/enable it (section 3.2) |
+| "No hardware video encoder available" | GPU driver missing or GPU without a hardware encoder | Update the GPU driver |
+| Netflix / DRM video is black | Protected content is blanked in screen capture by design | Watch it in the app on the tablet |
+| Touch lands in the wrong place | Display layout changed while streaming | It re-maps automatically within a quarter second; if not, toggle Off/On |

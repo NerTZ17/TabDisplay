@@ -52,21 +52,26 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamServer.Listener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (Build.VERSION.SDK_INT < 35) edgeToEdgeLegacy()
-        val d = checkNotNull(display)
+        edgeToEdgeLegacy()
+        val d = currentDisplay()
         val mode = pickMode(d)
         window.attributes = window.attributes.also {
-            it.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            if (Build.VERSION.SDK_INT >= 30) {
+                it.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else if (Build.VERSION.SDK_INT >= 28) {
+                it.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
             it.preferredDisplayModeId = mode.modeId
         }
         val maxRefresh = d.supportedModes
-            .filter { it.physicalWidth == mode.physicalWidth && it.physicalHeight == mode.physicalHeight }
-            .maxOf { it.refreshRate }
+            .filter { sameSize(it, mode) }
+            .maxOfOrNull { it.refreshRate } ?: mode.refreshRate
+        val maxHz = if (maxRefresh.isFinite() && maxRefresh >= 1f) maxRefresh.roundToInt() else DEFAULT_HZ
         panel = PanelInfo(
             modeId = mode.modeId,
             width = maxOf(mode.physicalWidth, mode.physicalHeight),
             height = minOf(mode.physicalWidth, mode.physicalHeight),
-            maxRefreshHz = maxRefresh.roundToInt(),
+            maxRefreshHz = maxHz,
         )
 
         buildViews()
@@ -226,6 +231,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamServer.Listener {
     private fun applyFrameRate() {
         val cfg = config ?: return
         if (cfg.fps <= 0) return
+        if (Build.VERSION.SDK_INT < 30) return
         val s = surfaceView.holder.surface
         if (!s.isValid) return
         runCatching {
@@ -239,14 +245,38 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamServer.Listener {
 
     @Suppress("DEPRECATION")
     private fun edgeToEdgeLegacy() {
-        window.setDecorFitsSystemWindows(false)
+        if (Build.VERSION.SDK_INT >= 30 && Build.VERSION.SDK_INT < 35) window.setDecorFitsSystemWindows(false)
     }
 
     private fun hideSystemBars() {
-        window.insetsController?.let {
-            it.hide(WindowInsets.Type.systemBars())
-            it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (Build.VERSION.SDK_INT >= 30) {
+            val controller = window.insetsController
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                return
+            }
         }
+        immersiveLegacy()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun immersiveLegacy() {
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    }
+
+    private fun currentDisplay(): Display {
+        if (Build.VERSION.SDK_INT >= 30) {
+            val d = display
+            if (d != null) return d
+        }
+        @Suppress("DEPRECATION")
+        return windowManager.defaultDisplay
     }
 
     private fun toggleStats() {
@@ -256,7 +286,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamServer.Listener {
 
     private fun updateStats() {
         if (statsView.visibility != View.VISIBLE) return
-        val current = display?.mode
+        val current = runCatching { currentDisplay().mode }.getOrNull()
         val panelLine = String.format(
             Locale.US,
             "panel %dx%d %.0f Hz (max %d)",
@@ -296,10 +326,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback, StreamServer.Listener {
         return best
     }
 
+    private fun sameSize(a: Display.Mode, b: Display.Mode): Boolean =
+        maxOf(a.physicalWidth, a.physicalHeight) == maxOf(b.physicalWidth, b.physicalHeight) &&
+            minOf(a.physicalWidth, a.physicalHeight) == minOf(b.physicalWidth, b.physicalHeight)
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
 
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+        const val DEFAULT_HZ = 60
     }
 }
