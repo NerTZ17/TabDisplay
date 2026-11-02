@@ -48,6 +48,15 @@ Measured on the author's PC (RTX 3070, Galaxy Tab S10 Ultra, USB 3): 120 fps at 
 
 The full walkthrough, including how to find your tablet's resolution, is in **[docs/SETUP.md](docs/SETUP.md)**.
 
+## Security warnings on first run
+
+TabDisplay is a free, open-source hobby project, so its files are **not digitally signed**. Signing a Windows program needs a paid code-signing certificate, and publishing on Google Play needs a developer account; neither is in place yet. Because of that, you will see these warnings the first time:
+
+- **Windows SmartScreen** ("Windows protected your PC"): click **More info → Run anyway**. TabDisplay only talks to the tablet through adb on `127.0.0.1` over the USB cable; it does not open network ports or connect to the internet.
+- **Android** ("Install unknown apps" / Play Protect): allow installing from the source you used (adb or your file manager) and confirm the install.
+
+If you prefer not to trust a downloaded binary, build both apps yourself from this source code (see [docs/SETUP.md](docs/SETUP.md)) so you know exactly what you run. Signed releases may come later if the project grows.
+
 ## How it works
 
 ```
