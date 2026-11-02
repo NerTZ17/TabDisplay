@@ -43,7 +43,15 @@ Either side closes the socket to end the session. The tablet then goes back to l
 | 9 | CursorShape | host → tablet | `u16 width`, `u16 height`, `u16 hotX`, `u16 hotY`, then `width*height*4` bytes BGRA, straight alpha, top-down rows |
 | 10 | CursorPos | host → tablet | `i16 x`, `i16 y` (pointer hot spot position in stream pixels), `u8 visible` |
 
+| 11 | Heartbeat | both | empty |
+
 The tablet draws the cursor bitmap with its top-left corner at `(x − hotX, y − hotY)`, scaled by the same factor as the video.
+
+## Liveness
+
+Each side sends `Heartbeat` when it has sent nothing else for 1 second. Each side ends the session when it has received nothing for 4 seconds, so a connection that dies inside `adb` without a FIN is detected. The host also uses a 3 second socket send timeout.
+
+The tablet keeps listening while a session runs. When a new host connects, the tablet closes the current session and serves the new one (newest host wins). Only one host process runs per Windows session (named mutex `Local\TabDisplayHost`).
 
 ### ClientHello payload
 

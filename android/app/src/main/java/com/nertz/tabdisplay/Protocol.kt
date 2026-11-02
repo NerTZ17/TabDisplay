@@ -18,6 +18,10 @@ object Protocol {
     const val REQUEST_KEYFRAME = 8
     const val CURSOR_SHAPE = 9
     const val CURSOR_POS = 10
+    const val HEARTBEAT = 11
+
+    const val HEARTBEAT_MS = 1000L
+    const val TIMEOUT_MS = 4000
 
     const val CODEC_HEVC = 1
     const val CODEC_H264 = 2

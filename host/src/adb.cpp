@@ -22,12 +22,14 @@ std::wstring findAdb() {
     return {};
 }
 
-bool adbForward(const std::wstring& adb, const std::wstring& serial, uint16_t port, std::string& output) {
+namespace {
+
+bool runAdb(const std::wstring& adb, const std::wstring& serial, const std::wstring& args, std::string& output) {
     std::wstring cmd = L"\"" + adb + L"\"";
     if (!serial.empty()) {
         cmd += L" -s " + serial;
     }
-    cmd += L" forward tcp:" + std::to_wstring(port) + L" tcp:" + std::to_wstring(port);
+    cmd += L" " + args;
 
     SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
     HANDLE readPipe = nullptr;
@@ -63,6 +65,38 @@ bool adbForward(const std::wstring& adb, const std::wstring& serial, uint16_t po
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
     return code == 0;
+}
+
+std::string narrowAscii(const std::wstring& w) {
+    std::string s;
+    for (wchar_t c : w) {
+        s.push_back(static_cast<char>(c));
+    }
+    return s;
+}
+
+}
+
+bool adbForward(const std::wstring& adb, const std::wstring& serial, uint16_t port, std::string& output) {
+    std::string mapping = "tcp:" + std::to_string(port) + " tcp:" + std::to_string(port);
+    std::string list;
+    if (runAdb(adb, L"", L"forward --list", list)) {
+        std::string want = serial.empty() ? mapping : narrowAscii(serial) + " " + mapping;
+        size_t start = 0;
+        while (start < list.size()) {
+            size_t end = list.find('\n', start);
+            std::string line = list.substr(start, end == std::string::npos ? std::string::npos : end - start);
+            if (line.find(want) != std::string::npos) {
+                output.clear();
+                return true;
+            }
+            if (end == std::string::npos) {
+                break;
+            }
+            start = end + 1;
+        }
+    }
+    return runAdb(adb, serial, L"forward " + std::wstring(mapping.begin(), mapping.end()), output);
 }
 
 }

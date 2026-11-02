@@ -6,6 +6,7 @@ import java.io.IOException
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -89,7 +90,12 @@ class Sender(private val socket: Socket) {
         try {
             while (true) {
                 val batch = lock.withLock {
-                    while (!closed && front.position() == 0) ready.await()
+                    while (!closed && front.position() == 0) {
+                        if (!ready.await(Protocol.HEARTBEAT_MS, TimeUnit.MILLISECONDS) && !closed && front.position() == 0) {
+                            front.putInt(1)
+                            front.put(Protocol.HEARTBEAT.toByte())
+                        }
+                    }
                     if (closed) return
                     val full = front
                     front = back

@@ -31,7 +31,8 @@ class StreamServer(
     @Volatile private var running = true
     @Volatile private var server: ServerSocket? = null
     @Volatile private var client: Socket? = null
-    private val thread = Thread(::run, "tabdisplay-net")
+    @Volatile private var sessionThread: Thread? = null
+    private val thread = Thread(::run, "tabdisplay-accept")
 
     private val header = ByteArray(5)
     private var buf = ByteArray(1 shl 20)
@@ -73,8 +74,7 @@ class StreamServer(
             try {
                 while (running) {
                     val socket = ss.accept()
-                    client = socket
-                    session(socket)
+                    replaceSession(socket)
                 }
             } catch (e: IOException) {
                 if (running) Log.w(TAG, "accept failed", e)
@@ -84,12 +84,30 @@ class StreamServer(
         }
     }
 
+    private fun replaceSession(socket: Socket) {
+        val previous = sessionThread
+        if (previous != null && previous.isAlive) {
+            Log.i(TAG, "new host connected, closing previous session")
+            runCatching { client?.close() }
+            previous.join(SESSION_JOIN_MS)
+        }
+        if (!running) {
+            runCatching { socket.close() }
+            return
+        }
+        client = socket
+        sessionThread = Thread({
+            runCatching { Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_DISPLAY) }
+            session(socket)
+        }, "tabdisplay-session").also { it.start() }
+    }
+
     private fun bind(): ServerSocket {
         val ss = ServerSocket()
         try {
             ss.reuseAddress = true
             ss.receiveBufferSize = 4 shl 20
-            ss.bind(InetSocketAddress(InetAddress.getLoopbackAddress(), Protocol.PORT), 1)
+            ss.bind(InetSocketAddress(InetAddress.getByName("127.0.0.1"), Protocol.PORT), 4)
         } catch (e: IOException) {
             runCatching { ss.close() }
             throw e
@@ -101,6 +119,7 @@ class StreamServer(
         var sender: Sender? = null
         try {
             socket.tcpNoDelay = true
+            socket.soTimeout = Protocol.TIMEOUT_MS
             socket.receiveBufferSize = 4 shl 20
             socket.sendBufferSize = 256 shl 10
             val stream = BufferedInputStream(socket.getInputStream(), 256 shl 10)
@@ -151,7 +170,7 @@ class StreamServer(
             decoder.sender = null
             sender?.close()
             runCatching { socket.close() }
-            client = null
+            if (client === socket) client = null
             listener.onSessionEnded()
         }
     }
@@ -206,5 +225,6 @@ class StreamServer(
 
     private companion object {
         const val TAG = "TabDisplay"
+        const val SESSION_JOIN_MS = 3000L
     }
 }

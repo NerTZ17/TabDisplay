@@ -22,7 +22,11 @@ enum class Msg : uint8_t {
     RequestKeyframe = 8,
     CursorShape = 9,
     CursorPos = 10,
+    Heartbeat = 11,
 };
+
+constexpr uint64_t kHeartbeatUs = 1000000;
+constexpr uint64_t kTimeoutUs = 4000000;
 
 enum class Codec : uint8_t { HEVC = 1, H264 = 2 };
 

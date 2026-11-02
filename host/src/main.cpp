@@ -429,7 +429,7 @@ private:
 };
 
 void receiveLoop(Connection& conn, Injector& injector, Stats& stats, std::atomic<int>& inFlight, std::atomic<bool>& keyRequest,
-                 std::atomic<uint64_t>& lastAck, std::atomic<bool>& alive) {
+                 std::atomic<uint64_t>& lastAck, std::atomic<uint64_t>& lastSeen, std::atomic<bool>& alive) {
     Msg type;
     std::vector<uint8_t> payload;
     std::vector<TouchPoint> points;
@@ -441,6 +441,7 @@ void receiveLoop(Connection& conn, Injector& injector, Stats& stats, std::atomic
         if (g_logInput) {
             input.flush(false);
         }
+        lastSeen = nowUs();
         Reader r(payload.data(), payload.size());
         switch (type) {
             case Msg::FrameAck: {
@@ -506,6 +507,12 @@ void receiveLoop(Connection& conn, Injector& injector, Stats& stats, std::atomic
 }
 
 int runStream(const Options& o, Capture& capture, const OutputInfo& out) {
+    HANDLE instance = CreateMutexW(nullptr, TRUE, L"Local\\TabDisplayHost");
+    if (instance && GetLastError() == ERROR_ALREADY_EXISTS) {
+        std::fprintf(stderr, "another tabdisplay-host is already running; close it first\n");
+        CloseHandle(instance);
+        return 1;
+    }
     NetInit net;
     std::wstring adb;
     if (!o.noAdb) {
@@ -590,8 +597,10 @@ int runStream(const Options& o, Capture& capture, const OutputInfo& out) {
         std::atomic<bool> keyRequest{true};
         std::atomic<bool> alive{true};
         std::atomic<uint64_t> lastAck{nowUs()};
+        std::atomic<uint64_t> lastSeen{nowUs()};
+        uint64_t lastHeartbeat = 0;
         std::thread receiver(receiveLoop, std::ref(conn), std::ref(injector), std::ref(stats), std::ref(inFlight), std::ref(keyRequest),
-                             std::ref(lastAck), std::ref(alive));
+                             std::ref(lastAck), std::ref(lastSeen), std::ref(alive));
         uint64_t interval = 1000000ull / params.fps;
         uint64_t nextDue = 0;
         uint32_t frameId = 1;
@@ -661,6 +670,17 @@ int runStream(const Options& o, Capture& capture, const OutputInfo& out) {
                 nextDue = now > nextDue + interval ? now + interval : nextDue + interval;
                 pending = false;
                 stats.encoded(took, bits.size());
+            }
+            uint64_t tickNow = nowUs();
+            if (tickNow - lastHeartbeat >= kHeartbeatUs) {
+                lastHeartbeat = tickNow;
+                if (!conn.send(Writer(Msg::Heartbeat).finish())) {
+                    break;
+                }
+            }
+            if (tickNow > lastSeen + kTimeoutUs) {
+                std::printf("tablet silent for %llu s, reconnecting\n", static_cast<unsigned long long>(kTimeoutUs / 1000000));
+                break;
             }
             stats.report("stream", inFlight.load());
         }
