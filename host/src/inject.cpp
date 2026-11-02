@@ -6,11 +6,13 @@ namespace td {
 
 Injector::~Injector() { close(); }
 
-bool Injector::open(const RECT& target) {
+bool Injector::open(const std::wstring& gdiName) {
     close();
-    rect_ = target;
-    origin_.x = GetSystemMetrics(SM_XVIRTUALSCREEN);
-    origin_.y = GetSystemMetrics(SM_YVIRTUALSCREEN);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        gdiName_ = gdiName;
+        refreshLocked(true);
+    }
     touchDevice_ = CreateSyntheticPointerDevice(PT_TOUCH, static_cast<ULONG>(active_.size()), POINTER_FEEDBACK_DEFAULT);
     penDevice_ = CreateSyntheticPointerDevice(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT);
     if (!touchDevice_ || !penDevice_) {
@@ -34,6 +36,40 @@ void Injector::close() {
     }
 }
 
+void Injector::refresh() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    refreshLocked(true);
+}
+
+void Injector::refreshLocked(bool force) {
+    ULONGLONG now = GetTickCount64();
+    if (!force && now - lastRefresh_ < 250) {
+        return;
+    }
+    lastRefresh_ = now;
+    DEVMODEW dm{};
+    dm.dmSize = sizeof dm;
+    if (!EnumDisplaySettingsExW(gdiName_.c_str(), ENUM_CURRENT_SETTINGS, &dm, 0) || dm.dmPelsWidth == 0 || dm.dmPelsHeight == 0) {
+        if (valid_) {
+            std::printf("[input] monitor %ls not active, input paused\n", gdiName_.c_str());
+            std::fflush(stdout);
+        }
+        valid_ = false;
+        return;
+    }
+    RECT rect{dm.dmPosition.x, dm.dmPosition.y, dm.dmPosition.x + static_cast<LONG>(dm.dmPelsWidth),
+              dm.dmPosition.y + static_cast<LONG>(dm.dmPelsHeight)};
+    POINT origin{GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN)};
+    if (!valid_ || !EqualRect(&rect, &rect_) || origin.x != origin_.x || origin.y != origin_.y) {
+        std::printf("[input] mapping %ls at (%ld,%ld) %ldx%ld, virtual origin (%ld,%ld)\n", gdiName_.c_str(), rect.left, rect.top,
+                    rect.right - rect.left, rect.bottom - rect.top, origin.x, origin.y);
+        std::fflush(stdout);
+    }
+    rect_ = rect;
+    origin_ = origin;
+    valid_ = true;
+}
+
 POINT Injector::map(uint16_t x, uint16_t y) const {
     LONG w = rect_.right - rect_.left;
     LONG h = rect_.bottom - rect_.top;
@@ -45,7 +81,8 @@ POINT Injector::map(uint16_t x, uint16_t y) const {
 
 void Injector::touch(const std::vector<TouchPoint>& points) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!touchDevice_) {
+    refreshLocked(false);
+    if (!touchDevice_ || !valid_) {
         return;
     }
     std::vector<POINTER_TYPE_INFO> infos;
@@ -91,7 +128,8 @@ void Injector::touch(const std::vector<TouchPoint>& points) {
 
 void Injector::pen(const PenSample& s) {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!penDevice_) {
+    refreshLocked(false);
+    if (!penDevice_ || !valid_) {
         return;
     }
     bool inRange = (s.flags & (kPenInRange | kPenContact)) != 0;

@@ -572,14 +572,8 @@ int runStream(const Options& o, Capture& capture, const OutputInfo& out) {
         if (enc.sequenceParams(bits)) {
             conn.send(videoMessage(0, nowUs(), kFrameCodecConfig, bits));
         }
-        RECT desktop = out.desktop;
-        for (const OutputInfo& current : listOutputs()) {
-            if (current.gdiName == out.gdiName) {
-                desktop = current.desktop;
-            }
-        }
         Injector injector;
-        injector.open(desktop);
+        injector.open(out.gdiName);
         if (!lastCursor.bgra.empty()) {
             CursorUpdate replay = lastCursor;
             replay.shapeChanged = true;
@@ -619,6 +613,7 @@ int runStream(const Options& o, Capture& capture, const OutputInfo& out) {
                     makeFrameTexture(capture.device(), capture.width(), capture.height(), frame);
                     break;
                 }
+                injector.refresh();
                 pending = true;
                 keyRequest = true;
             } else if (r == Capture::Result::Error) {

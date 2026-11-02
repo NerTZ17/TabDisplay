@@ -4,6 +4,7 @@
 
 #include <array>
 #include <mutex>
+#include <string>
 #include <vector>
 
 #include "protocol.h"
@@ -14,15 +15,20 @@ class Injector {
 public:
     ~Injector();
 
-    bool open(const RECT& target);
+    bool open(const std::wstring& gdiName);
     void close();
+    void refresh();
     void touch(const std::vector<TouchPoint>& points);
     void pen(const PenSample& sample);
     void releaseAll();
 
 private:
     POINT map(uint16_t x, uint16_t y) const;
+    void refreshLocked(bool force);
 
+    std::wstring gdiName_;
+    bool valid_ = false;
+    ULONGLONG lastRefresh_ = 0;
     HSYNTHETICPOINTERDEVICE touchDevice_ = nullptr;
     HSYNTHETICPOINTERDEVICE penDevice_ = nullptr;
     RECT rect_{};
