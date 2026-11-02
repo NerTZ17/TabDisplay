@@ -60,9 +60,13 @@ NVENC di 2960×1848 (`--bench --stress`): ±273 fps, rata-rata 3,0 ms saat GPU d
 
 Decoder tablet: `c2.mtk.hevc.decoder` melaporkan maks 389 fps di 2960×1848, `c2.mtk.avc.decoder` 193 fps. Panel punya mode 30/60/120 Hz. Bagian terbesar latency adalah decode di tablet (±11 ms).
 
+## Aplikasi PC
+
+- `TabDisplay.exe`: aplikasi tray ala flyout Windows 11 dengan sakelar On/Off, status, dan "Mulai bersama Windows". Monitor 3 dipasang saat tablet tersambung dan dilepas saat dicabut atau dimatikan; app tablet dibuka otomatis lewat adb.
+- `tabdisplay-host.exe`: versi console untuk debug dan benchmark.
+
 ## Belum termasuk
 
 - AOAP (USB tanpa USB debugging)
 - Audio
-- Auto-start dan UI tray di PC
 - Pipelining encode async (perlu kalau encode 3K mendekati 8 ms)

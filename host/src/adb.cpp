@@ -24,7 +24,7 @@ std::wstring findAdb() {
 
 namespace {
 
-bool runAdb(const std::wstring& adb, const std::wstring& serial, const std::wstring& args, std::string& output) {
+bool runAdb(const std::wstring& adb, const std::wstring& serial, const std::wstring& args, std::string& output, DWORD timeoutMs = 10000) {
     std::wstring cmd = L"\"" + adb + L"\"";
     if (!serial.empty()) {
         cmd += L" -s " + serial;
@@ -34,7 +34,7 @@ bool runAdb(const std::wstring& adb, const std::wstring& serial, const std::wstr
     SECURITY_ATTRIBUTES sa{sizeof sa, nullptr, TRUE};
     HANDLE readPipe = nullptr;
     HANDLE writePipe = nullptr;
-    if (!CreatePipe(&readPipe, &writePipe, &sa, 0)) {
+    if (!CreatePipe(&readPipe, &writePipe, &sa, 64 * 1024)) {
         return false;
     }
     SetHandleInformation(readPipe, HANDLE_FLAG_INHERIT, 0);
@@ -43,7 +43,7 @@ bool runAdb(const std::wstring& adb, const std::wstring& serial, const std::wstr
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdOutput = writePipe;
     si.hStdError = writePipe;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdInput = nullptr;
     PROCESS_INFORMATION pi{};
     BOOL ok = CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
     CloseHandle(writePipe);
@@ -52,18 +52,30 @@ bool runAdb(const std::wstring& adb, const std::wstring& serial, const std::wstr
         output = "failed to start adb";
         return false;
     }
-    char buf[512];
-    DWORD got = 0;
+    bool finished = WaitForSingleObject(pi.hProcess, timeoutMs) == WAIT_OBJECT_0;
+    if (!finished) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 2000);
+    }
     output.clear();
-    while (ReadFile(readPipe, buf, sizeof buf, &got, nullptr) && got > 0) {
+    char buf[512];
+    DWORD avail = 0;
+    while (PeekNamedPipe(readPipe, nullptr, 0, nullptr, &avail, nullptr) && avail > 0) {
+        DWORD got = 0;
+        if (!ReadFile(readPipe, buf, sizeof buf, &got, nullptr) || got == 0) {
+            break;
+        }
         output.append(buf, got);
     }
     CloseHandle(readPipe);
-    WaitForSingleObject(pi.hProcess, 15000);
     DWORD code = 1;
     GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+    if (!finished) {
+        output = "adb timed out";
+        return false;
+    }
     return code == 0;
 }
 
@@ -73,6 +85,14 @@ std::string narrowAscii(const std::wstring& w) {
         s.push_back(static_cast<char>(c));
     }
     return s;
+}
+
+std::string trim(std::string s) {
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' ')) {
+        s.pop_back();
+    }
+    size_t start = s.find_first_not_of(" \r\n");
+    return start == std::string::npos ? std::string() : s.substr(start);
 }
 
 }
@@ -97,6 +117,33 @@ bool adbForward(const std::wstring& adb, const std::wstring& serial, uint16_t po
         }
     }
     return runAdb(adb, serial, L"forward " + std::wstring(mapping.begin(), mapping.end()), output);
+}
+
+std::string adbState(const std::wstring& adb, const std::wstring& serial) {
+    std::string output;
+    bool ok = runAdb(adb, serial, L"get-state", output, 5000);
+    output = trim(output);
+    if (ok) {
+        return output;
+    }
+    if (output.find("more than one") != std::string::npos) {
+        return "multiple";
+    }
+    if (output.find("offline") != std::string::npos) {
+        return "offline";
+    }
+    if (output.find("unauthorized") != std::string::npos) {
+        return "unauthorized";
+    }
+    if (output == "adb timed out") {
+        return "timeout";
+    }
+    return "none";
+}
+
+bool adbLaunchApp(const std::wstring& adb, const std::wstring& serial) {
+    std::string output;
+    return runAdb(adb, serial, L"shell am start -n com.nertz.tabdisplay/.MainActivity", output, 8000);
 }
 
 }

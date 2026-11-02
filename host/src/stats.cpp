@@ -52,6 +52,9 @@ void Stats::report(const char* label, int inFlight) {
     uint64_t encMax = encodeMaxUs_.exchange(0);
     uint64_t rtt = rttUs_.exchange(0);
     uint64_t dec = decodeUs_.exchange(0);
+    ackFps_ = acks / seconds;
+    rttMs_ = acks ? rtt / 1000.0 / acks : 0.0;
+    mbps_ = bytes * 8.0 / 1e6 / seconds;
     std::printf("[%s] cap %5.1f fps | enc %5.1f fps avg %5.2f ms max %5.2f ms | %6.1f Mbps %6.1f KB/f | skip %3u | inflight %d",
                 label, cap / seconds, enc / seconds, enc ? encUs / 1000.0 / enc : 0.0, encMax / 1000.0,
                 bytes * 8.0 / 1e6 / seconds, enc ? bytes / 1024.0 / enc : 0.0, skip, inFlight);

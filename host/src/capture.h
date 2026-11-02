@@ -45,6 +45,7 @@ public:
 
     bool open(const OutputInfo& output);
     bool reopen();
+    void close();
     Result acquire(uint32_t timeoutMs, ID3D11Texture2D* dst, CursorUpdate& cursor);
 
     ID3D11Device* device() const { return device_.Get(); }

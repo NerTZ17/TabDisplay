@@ -128,6 +128,7 @@ std::vector<OutputInfo> listOutputs() {
 }
 
 bool Capture::open(const OutputInfo& output) {
+    close();
     info_ = output;
     ComPtr<IDXGIFactory1> factory;
     if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
@@ -196,6 +197,16 @@ bool Capture::duplicate() {
         return false;
     }
     return true;
+}
+
+void Capture::close() {
+    dupl_.Reset();
+    output_.Reset();
+    adapter_.Reset();
+    context_.Reset();
+    device_.Reset();
+    width_ = 0;
+    height_ = 0;
 }
 
 bool Capture::reopen() {

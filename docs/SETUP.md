@@ -58,7 +58,23 @@ Install ke tablet:
 adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 ```
 
-## 4. Jalankan
+## 4. Pemakaian sehari-hari (aplikasi tray)
+
+`host\build\TabDisplay.exe` adalah aplikasi tray. Cukup jalankan sekali; setelah itu ia ikut berjalan saat login Windows (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`, nilai `TabDisplay`, argumen `--background`).
+
+| Situasi | Yang terjadi |
+|---|---|
+| Sakelar **On**, tablet dicolok | Monitor 3 dipasang di posisi terakhir, app TabDisplay di tablet dibuka (sekali per colok), streaming jalan |
+| Tablet dicabut | Monitor 3 dilepas, PC kembali ke 2 layar |
+| Sakelar **Off** | Streaming berhenti, monitor 3 dilepas |
+| Klik ikon tray | Buka/tutup panel |
+| Klik kanan ikon tray → Keluar | Streaming berhenti, monitor 3 dilepas, aplikasi keluar |
+
+Warna titik pada ikon tray: hijau tersambung, kuning menunggu, merah ada masalah, tanpa titik berarti mati. Status On/Off terakhir dan pilihan "Mulai bersama Windows" diingat (`HKCU\Software\NerTZ\TabDisplay`). Log ada di `%LOCALAPPDATA%\TabDisplay\tabdisplay.log`.
+
+Hanya satu dari `TabDisplay.exe` atau `tabdisplay-host.exe` yang bisa berjalan pada satu waktu.
+
+## 5. Jalankan dari console (debug)
 
 1. Buka app **TabDisplay** di tablet. Layar menunjukkan status menunggu PC.
 2. Di PC:
@@ -85,6 +101,9 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 | `--serial <id>` | Serial adb kalau ada beberapa perangkat |
 | `--no-adb` | Jangan jalankan `adb forward` |
 | `--log-input` | Tampilkan event sentuhan dan pena dari tablet |
+| `--keep-monitor` | Jangan lepas/pasang monitor 3 otomatis |
+| `--no-launch` | Jangan buka app tablet otomatis |
+| `--monitor-on` / `--monitor-off` | Pasang / lepas monitor 3 lalu keluar |
 | `--no-cursor-restore` | Jangan kembalikan kursor mouse ke posisi sebelum tap (default: dikembalikan 80 ms setelah jari/pena diangkat) |
 | `--bench <detik>` | Uji capture + encode tanpa tablet |
 | `--stress` | Dengan `--bench`: encode terus walau layar diam |
