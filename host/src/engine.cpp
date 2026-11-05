@@ -34,6 +34,26 @@ std::string narrow(const std::wstring& w) {
     return s;
 }
 
+const char* stateName(EngineState state) {
+    switch (state) {
+        case EngineState::Off:
+            return "off";
+        case EngineState::Stopping:
+            return "stopping";
+        case EngineState::NoTablet:
+            return "no-tablet";
+        case EngineState::TabletProblem:
+            return "tablet-problem";
+        case EngineState::OpeningApp:
+            return "opening-app";
+        case EngineState::Streaming:
+            return "streaming";
+        case EngineState::Error:
+            return "error";
+    }
+    return "unknown";
+}
+
 std::wstring monitorMatch(const Options& o) {
     if (!o.monitor.empty() && o.monitor.rfind(L"\\\\.\\", 0) != 0) {
         return o.monitor;
@@ -380,7 +400,7 @@ EngineStatus Engine::status() const {
 void Engine::setState(EngineState state, const std::wstring& detail) {
     std::lock_guard<std::mutex> lock(statusMutex_);
     if (status_.state != state || status_.detail != detail) {
-        std::printf("[state] %d %s\n", static_cast<int>(state), narrow(detail).c_str());
+        std::printf("[state] %s %s\n", stateName(state), narrow(detail).c_str());
         std::fflush(stdout);
     }
     status_.state = state;

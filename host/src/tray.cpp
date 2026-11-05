@@ -6,8 +6,9 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 
+#include <dbt.h>
+#include <fcntl.h>
 #include <io.h>
-#include <share.h>
 
 #include <algorithm>
 #include <atomic>
@@ -206,24 +207,201 @@ void loadSettings() {
     g.autoKnob = g.autostart ? 1.0f : 0.0f;
 }
 
+constexpr uint64_t kLogMaxBytes = 10ull * 1024 * 1024;
+constexpr int kLogKeep = 4;
+constexpr ULONGLONG kLogRetryMs = 5000;
+constexpr GUID kUsbDeviceInterface{0xA5DCBF10, 0x6530, 0x11D2, {0x90, 0x1F, 0x00, 0xC0, 0x4F, 0xB9, 0x51, 0xED}};
+
+struct LogState {
+    std::filesystem::path dir;
+    HANDLE file = INVALID_HANDLE_VALUE;
+    uint64_t size = 0;
+    uint64_t limit = kLogMaxBytes;
+    ULONGLONG lastOpenAttempt = 0;
+    bool opened = false;
+    HANDLE readPipe = nullptr;
+    HANDLE thread = nullptr;
+};
+
+LogState gLog;
+
+std::filesystem::path logPath(int index) {
+    if (index == 0) {
+        return gLog.dir / L"tabdisplay.log";
+    }
+    return gLog.dir / (L"tabdisplay." + std::to_wstring(index) + L".log");
+}
+
+HANDLE openAppend(const std::filesystem::path& path) {
+    return CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS,
+                       FILE_ATTRIBUTE_NORMAL, nullptr);
+}
+
+bool openLogFile() {
+    ULONGLONG now = GetTickCount64();
+    if (gLog.opened && now - gLog.lastOpenAttempt < kLogRetryMs) {
+        return false;
+    }
+    gLog.opened = true;
+    gLog.lastOpenAttempt = now;
+    gLog.file = openAppend(logPath(0));
+    if (gLog.file == INVALID_HANDLE_VALUE) {
+        gLog.file = openAppend(gLog.dir / (L"tabdisplay-" + std::to_wstring(GetCurrentProcessId()) + L".log"));
+    }
+    if (gLog.file == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+    LARGE_INTEGER size{};
+    GetFileSizeEx(gLog.file, &size);
+    gLog.size = static_cast<uint64_t>(size.QuadPart);
+    gLog.limit = kLogMaxBytes;
+    return true;
+}
+
+void rotateLog() {
+    CloseHandle(gLog.file);
+    gLog.file = INVALID_HANDLE_VALUE;
+    std::error_code ec;
+    std::filesystem::remove(logPath(kLogKeep), ec);
+    for (int i = kLogKeep - 1; i >= 0; --i) {
+        std::filesystem::rename(logPath(i), logPath(i + 1), ec);
+    }
+    gLog.opened = false;
+    if (openLogFile() && gLog.size >= kLogMaxBytes) {
+        gLog.limit = gLog.size + 1024 * 1024;
+    }
+}
+
+void writeLogLine(const char* data, size_t length) {
+    if (length == 0) {
+        return;
+    }
+    if (gLog.file == INVALID_HANDLE_VALUE && !openLogFile()) {
+        return;
+    }
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    char stamp[32];
+    int n = std::snprintf(stamp, sizeof stamp, "%04u-%02u-%02u %02u:%02u:%02u.%03u ", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond,
+                          t.wMilliseconds);
+    std::string line;
+    line.reserve(static_cast<size_t>(n) + length + 2);
+    line.append(stamp, static_cast<size_t>(n));
+    line.append(data, length);
+    line.append("\r\n");
+    DWORD written = 0;
+    if (!WriteFile(gLog.file, line.data(), static_cast<DWORD>(line.size()), &written, nullptr)) {
+        CloseHandle(gLog.file);
+        gLog.file = INVALID_HANDLE_VALUE;
+        return;
+    }
+    gLog.size += written;
+    if (gLog.size >= gLog.limit) {
+        rotateLog();
+    }
+}
+
+DWORD WINAPI logPump(void*) {
+    std::string pending;
+    char buffer[8192];
+    DWORD got = 0;
+    while (ReadFile(gLog.readPipe, buffer, sizeof buffer, &got, nullptr) && got > 0) {
+        pending.append(buffer, got);
+        size_t start = 0;
+        for (size_t nl = pending.find('\n'); nl != std::string::npos; nl = pending.find('\n', start)) {
+            size_t end = nl;
+            if (end > start && pending[end - 1] == '\r') {
+                --end;
+            }
+            writeLogLine(pending.data() + start, end - start);
+            start = nl + 1;
+        }
+        pending.erase(0, start);
+    }
+    writeLogLine(pending.data(), pending.size());
+    if (gLog.file != INVALID_HANDLE_VALUE) {
+        CloseHandle(gLog.file);
+        gLog.file = INVALID_HANDLE_VALUE;
+    }
+    return 0;
+}
+
 void openLog() {
     wchar_t local[MAX_PATH];
     DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
-    if (n == 0 || n >= MAX_PATH) {
-        return;
-    }
-    std::filesystem::path dir = std::filesystem::path(local) / L"TabDisplay";
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    std::wstring log = (dir / L"tabdisplay.log").wstring();
     FILE* f = nullptr;
     _wfreopen_s(&f, L"NUL", L"w", stdout);
     _wfreopen_s(&f, L"NUL", L"w", stderr);
-    FILE* shared = _wfsopen(log.c_str(), L"w", _SH_DENYNO);
-    if (shared) {
-        _dup2(_fileno(shared), _fileno(stdout));
-        _dup2(_fileno(shared), _fileno(stderr));
+    if (n == 0 || n >= MAX_PATH) {
+        return;
     }
+    gLog.dir = std::filesystem::path(local) / L"TabDisplay";
+    std::error_code ec;
+    std::filesystem::create_directories(gLog.dir, ec);
+    HANDLE writePipe = nullptr;
+    if (!CreatePipe(&gLog.readPipe, &writePipe, nullptr, 64 * 1024)) {
+        gLog.readPipe = nullptr;
+        return;
+    }
+    int fd = _open_osfhandle(reinterpret_cast<intptr_t>(writePipe), _O_WRONLY | _O_BINARY);
+    if (fd < 0) {
+        CloseHandle(writePipe);
+        CloseHandle(gLog.readPipe);
+        gLog.readPipe = nullptr;
+        return;
+    }
+    _dup2(fd, _fileno(stdout));
+    _dup2(fd, _fileno(stderr));
+    _close(fd);
+    for (int stream : {_fileno(stdout), _fileno(stderr)}) {
+        SetHandleInformation(reinterpret_cast<HANDLE>(_get_osfhandle(stream)), HANDLE_FLAG_INHERIT, 0);
+    }
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    openLogFile();
+    gLog.thread = CreateThread(nullptr, 0, logPump, nullptr, 0, nullptr);
+    std::printf("=== TabDisplay started, pid %lu\n", GetCurrentProcessId());
+}
+
+void closeLog() {
+    if (!gLog.thread) {
+        return;
+    }
+    std::printf("=== TabDisplay exiting\n");
+    FILE* f = nullptr;
+    _wfreopen_s(&f, L"NUL", L"w", stdout);
+    _wfreopen_s(&f, L"NUL", L"w", stderr);
+    WaitForSingleObject(gLog.thread, 2000);
+    CloseHandle(gLog.thread);
+    gLog.thread = nullptr;
+}
+
+void logDeviceChange(WPARAM wp, LPARAM lp) {
+    if ((wp != DBT_DEVICEARRIVAL && wp != DBT_DEVICEREMOVECOMPLETE) || !lp) {
+        return;
+    }
+    auto* header = reinterpret_cast<DEV_BROADCAST_HDR*>(lp);
+    if (header->dbch_devicetype != DBT_DEVTYP_DEVICEINTERFACE) {
+        return;
+    }
+    std::wstring name = reinterpret_cast<DEV_BROADCAST_DEVICEINTERFACE_W*>(lp)->dbcc_name;
+    if (name.rfind(L"\\\\?\\", 0) == 0) {
+        name.erase(0, 4);
+    }
+    size_t guid = name.rfind(L"#{");
+    if (guid != std::wstring::npos) {
+        name.erase(guid);
+    }
+    std::replace(name.begin(), name.end(), L'#', L'\\');
+    std::printf("[usb] %s %ls\n", wp == DBT_DEVICEARRIVAL ? "connected" : "removed", name.c_str());
+}
+
+HDEVNOTIFY registerUsbNotifications(HWND hwnd) {
+    DEV_BROADCAST_DEVICEINTERFACE_W filter{};
+    filter.dbcc_size = sizeof filter;
+    filter.dbcc_devicetype = DBT_DEVTYP_DEVICEINTERFACE;
+    filter.dbcc_classguid = kUsbDeviceInterface;
+    return RegisterDeviceNotificationW(hwnd, &filter, DEVICE_NOTIFY_WINDOW_HANDLE);
 }
 
 enum IconKind { IconOff = 0, IconWait = 1, IconGood = 2, IconBad = 3 };
@@ -906,6 +1084,16 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 InvalidateRect(hwnd, nullptr, FALSE);
             }
             return 0;
+        case WM_DEVICECHANGE:
+            logDeviceChange(wp, lp);
+            return TRUE;
+        case WM_POWERBROADCAST:
+            if (wp == PBT_APMSUSPEND) {
+                std::printf("[power] sleep\n");
+            } else if (wp == PBT_APMRESUMEAUTOMATIC) {
+                std::printf("[power] resume\n");
+            }
+            return TRUE;
         case WM_CLOSE:
             hidePanel();
             return 0;
@@ -951,6 +1139,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
                              nullptr);
     if (!atom || !g.hwnd) {
         std::printf("[ui] window creation failed (%lu)\n", GetLastError());
+        closeLog();
         return 1;
     }
     if (showEvent) {
@@ -965,6 +1154,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
     DwmSetWindowAttribute(g.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &corner, sizeof corner);
     applyTheme();
     g.taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+    HDEVNOTIFY usbNotify = registerUsbNotifications(g.hwnd);
     addTray();
     if (g.enabled) {
         startEngine();
@@ -986,10 +1176,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmdLine, int) {
         g.engine->stop();
         g.engine.reset();
     }
+    if (usbNotify) {
+        UnregisterDeviceNotification(usbNotify);
+    }
     Shell_NotifyIconW(NIM_DELETE, &g.nid);
     if (g.icon) {
         DestroyIcon(g.icon);
     }
     CoUninitialize();
+    closeLog();
     return 0;
 }
