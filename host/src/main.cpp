@@ -29,6 +29,7 @@ void usage() {
         "  --codec auto|hevc|h264 codec choice (default auto)\n"
         "  --encoder auto|nvenc|mf  video encoder (default auto: NVENC on NVIDIA, Media Foundation otherwise)\n"
         "  --fps <n>              target frame rate (default: monitor refresh rate)\n"
+        "  --game-fps <n>         frame rate while a fullscreen app runs on another monitor (default 30, 0 = off)\n"
         "  --bitrate <mbps>       bitrate in Mbps (default 80)\n"
         "  --inflight <n>         frames allowed without ack (default 3)\n"
         "  --force                ignore decoder limits reported by the tablet\n"
@@ -91,6 +92,8 @@ bool parseArgs(int argc, wchar_t** argv, Options& o) {
             o.dumpPath = v;
         } else if (a == L"--fps" && next(v)) {
             o.fps = static_cast<uint32_t>(std::stoul(v));
+        } else if (a == L"--game-fps" && next(v)) {
+            o.gameFps = static_cast<uint32_t>(std::stoul(v));
         } else if (a == L"--bitrate" && next(v)) {
             o.bitrateKbps = static_cast<uint32_t>(std::stod(v) * 1000.0);
         } else if (a == L"--inflight" && next(v)) {

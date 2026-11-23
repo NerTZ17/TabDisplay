@@ -522,7 +522,7 @@ std::wstring streamLine(const EngineStatus& s) {
         return {};
     }
     wchar_t buf[96];
-    swprintf_s(buf, L"%u × %u · %u fps", s.width, s.height, s.fps);
+    swprintf_s(buf, L"%u × %u · %u fps%s", s.width, s.height, s.fps, s.gameMode ? L" · game mode" : L"");
     return buf;
 }
 

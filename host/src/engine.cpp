@@ -200,6 +200,39 @@ void sendCursor(Connection& conn, const CursorUpdate& c) {
     }
 }
 
+bool fullscreenOnOtherMonitor(const RECT& streamed) {
+    HWND hwnd = GetForegroundWindow();
+    if (!hwnd || IsIconic(hwnd)) {
+        return false;
+    }
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == GetCurrentProcessId()) {
+        return false;
+    }
+    wchar_t cls[64]{};
+    GetClassNameW(hwnd, cls, static_cast<int>(std::size(cls)));
+    std::wstring name = cls;
+    if (name == L"Progman" || name == L"WorkerW" || name == L"Shell_TrayWnd" || name == L"Shell_SecondaryTrayWnd") {
+        return false;
+    }
+    LONG style = GetWindowLongW(hwnd, GWL_STYLE);
+    if (!(style & WS_POPUP) || (style & WS_CAPTION) == WS_CAPTION) {
+        return false;
+    }
+    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONULL);
+    MONITORINFO mi{};
+    mi.cbSize = sizeof mi;
+    if (!monitor || !GetMonitorInfoW(monitor, &mi) || EqualRect(&mi.rcMonitor, &streamed)) {
+        return false;
+    }
+    RECT wr{};
+    if (!GetWindowRect(hwnd, &wr)) {
+        return false;
+    }
+    return wr.left <= mi.rcMonitor.left && wr.top <= mi.rcMonitor.top && wr.right >= mi.rcMonitor.right && wr.bottom >= mi.rcMonitor.bottom;
+}
+
 bool handshake(Connection& conn, ClientHello& hello) {
     if (!conn.send(Writer(Msg::Hello).raw(kMagic, 4).u16(kVersion).finish())) {
         return false;
@@ -409,6 +442,7 @@ void Engine::setState(EngineState state, const std::wstring& detail) {
         status_.ackFps = 0;
         status_.rttMs = 0;
         status_.mbps = 0;
+        status_.gameMode = false;
     }
 }
 
@@ -591,6 +625,7 @@ bool Engine::streamSession() {
         status_.width = params.width;
         status_.height = params.height;
         status_.fps = params.fps;
+        status_.gameMode = false;
         status_.hevc = params.codec == Codec::HEVC;
         status_.encoder = enc.name();
     }
@@ -624,11 +659,37 @@ bool Engine::streamSession() {
     uint64_t interval = 1000000ull / params.fps;
     uint64_t nextDue = 0;
     uint64_t lastHeartbeat = 0;
+    uint64_t lastGameCheck = 0;
+    uint32_t gameFps = o_.gameFps ? std::min(o_.gameFps, params.fps) : 0;
+    bool gameMode = false;
+    DWORD normalPriority = GetPriorityClass(GetCurrentProcess());
+    ComPtr<IDXGIDevice> gpu;
+    capture_.device()->QueryInterface(IID_PPV_ARGS(&gpu));
+    auto setGameMode = [&](bool on) {
+        gameMode = on;
+        uint32_t fps = on ? gameFps : params.fps;
+        interval = 1000000ull / fps;
+        SetPriorityClass(GetCurrentProcess(), on ? BELOW_NORMAL_PRIORITY_CLASS : normalPriority);
+        if (gpu) {
+            gpu->SetGPUThreadPriority(on ? -7 : 0);
+        }
+        std::printf("[game] %s, streaming at %u fps\n", on ? "fullscreen app on another monitor" : "fullscreen app gone", fps);
+        std::fflush(stdout);
+        std::lock_guard<std::mutex> lock(statusMutex_);
+        status_.fps = fps;
+        status_.gameMode = on;
+    };
     uint32_t frameId = 1;
     bool pending = true;
     while (shared.alive && !stop_) {
         CursorUpdate cursor;
-        Capture::Result r = capture_.acquire(pending ? 1 : 4, frame_.Get(), cursor);
+        Capture::Result r = Capture::Result::NoFrame;
+        uint64_t loopNow = nowUs();
+        if (loopNow + 1000 < nextDue) {
+            Sleep(static_cast<DWORD>(std::clamp<uint64_t>((nextDue - loopNow) / 1000, 1, 4)));
+        } else {
+            r = capture_.acquire(pending ? 1 : 4, frame_.Get(), cursor);
+        }
         if (r == Capture::Result::Frame) {
             stats.captured();
             if (pending) {
@@ -692,6 +753,13 @@ bool Engine::streamSession() {
             stats.encoded(took, bits.size());
         }
         uint64_t tickNow = nowUs();
+        if (gameFps && tickNow - lastGameCheck >= 500000) {
+            lastGameCheck = tickNow;
+            bool fullscreen = fullscreenOnOtherMonitor(output_.desktop);
+            if (fullscreen != gameMode) {
+                setGameMode(fullscreen);
+            }
+        }
         if (tickNow - lastHeartbeat >= kHeartbeatUs) {
             lastHeartbeat = tickNow;
             if (!conn.send(Writer(Msg::Heartbeat).finish())) {
@@ -709,6 +777,9 @@ bool Engine::streamSession() {
             status_.rttMs = stats.rttMs();
             status_.mbps = stats.mbps();
         }
+    }
+    if (gameMode) {
+        setGameMode(false);
     }
     shared.alive = false;
     conn.close();
