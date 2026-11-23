@@ -474,26 +474,45 @@ bool MfEncoder::encode(bool forceIdr, uint64_t timestamp, std::vector<uint8_t>& 
     sample->SetSampleDuration(10000000LL / (p_.fps ? p_.fps : 60));
 
     if (async_) {
-        while (needInput_ == 0) {
-            if (!pump(200)) {
+        constexpr DWORD kInputWaitMs = 1000;
+        constexpr DWORD kOutputWaitMs = 250;
+        bool dropped = false;
+        ULONGLONG inputDeadline = GetTickCount64() + kInputWaitMs;
+        while (needInput_ == 0 || haveOutput_ > 0) {
+            if (haveOutput_ > 0) {
+                haveOutput_--;
+                std::vector<uint8_t> late;
+                bool lateIdr = false;
+                if (!drain(late, lateIdr)) {
+                    return false;
+                }
+                dropped = dropped || !late.empty();
+                continue;
+            }
+            ULONGLONG now = GetTickCount64();
+            if (now >= inputDeadline || !pump(static_cast<DWORD>(inputDeadline - now))) {
                 if (error_.empty()) {
                     error_ = "encoder did not request input";
                 }
                 return false;
             }
         }
+        if (dropped && !forceIdr) {
+            setCodecValue(CODECAPI_AVEncVideoForceKeyFrame, 1);
+        }
         hr = mft_->ProcessInput(0, sample.Get(), 0);
         if (FAILED(hr)) {
             return fail("ProcessInput", hr);
         }
         needInput_--;
-        ULONGLONG deadline = GetTickCount64() + 100;
-        while (haveOutput_ == 0 && GetTickCount64() < deadline) {
-            if (!pump(static_cast<DWORD>(deadline - GetTickCount64()))) {
+        ULONGLONG deadline = GetTickCount64() + kOutputWaitMs;
+        while (haveOutput_ == 0) {
+            ULONGLONG now = GetTickCount64();
+            if (now >= deadline || !pump(static_cast<DWORD>(deadline - now))) {
                 break;
             }
         }
-        while (haveOutput_ > 0) {
+        if (haveOutput_ > 0) {
             haveOutput_--;
             if (!drain(out, idr)) {
                 return false;
