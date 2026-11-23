@@ -20,6 +20,7 @@ struct Options {
     std::wstring encoder = L"auto";
     std::wstring dumpPath;
     uint32_t fps = 0;
+    uint32_t gameFps = 30;
     uint32_t bitrateKbps = 80000;
     int maxInFlight = 3;
     int benchSeconds = 0;
@@ -43,6 +44,7 @@ struct EngineStatus {
     uint32_t height = 0;
     uint32_t fps = 0;
     bool hevc = true;
+    bool gameMode = false;
     std::string encoder;
     double ackFps = 0;
     double rttMs = 0;

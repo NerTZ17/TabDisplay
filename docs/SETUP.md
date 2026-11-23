@@ -103,7 +103,20 @@ adb install -r android\app\build\outputs\apk\debug\app-debug.apk
 
 Tray icon dot: green connected, yellow waiting, red needs attention, no dot off. The info button in the panel shows latency, frame rate, bitrate, codec and encoder.
 
-Settings live in `HKCU\Software\NerTZ\TabDisplay`; the startup entry is `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TabDisplay`. The log is `%LOCALAPPDATA%\TabDisplay\tabdisplay.log`.
+Settings live in `HKCU\Software\NerTZ\TabDisplay`; the startup entry is `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\TabDisplay`. The log is `%LOCALAPPDATA%\TabDisplay\tabdisplay.log`. Every line starts with the date and time, and the log keeps growing across restarts. At 10 MB it moves to `tabdisplay.1.log`, and up to four older files are kept (`tabdisplay.1.log` to `tabdisplay.4.log`, about three days of streaming).
+
+What the log records:
+
+| Prefix | Meaning |
+|---|---|
+| `=== TabDisplay started` / `exiting` | The tray app starts or quits |
+| `[state]` | Engine state: `off`, `no-tablet`, `tablet-problem`, `opening-app`, `streaming`, `error` |
+| `[usb] connected` / `removed` | Windows saw a USB device appear or disappear, with its ID (`USB\VID_04E8&PID_6860\...` is a Samsung device) |
+| `[power] sleep` / `resume` | The PC goes to sleep or wakes up |
+| `[stream]` | One line per second while streaming: frame rates, encode time, bitrate, round trip, decode time |
+| `[display]` | Virtual monitor attached or detached |
+
+A `[usb] removed` line for the tablet while the cable stayed plugged in points to a cable, port or connector problem.
 
 Only one of `TabDisplay.exe` or `tabdisplay-host.exe` can run at a time.
 

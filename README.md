@@ -25,6 +25,7 @@ The result is TabDisplay. It runs well on my own setup every day: a Galaxy Tab S
 - Touch never steals your mouse. Tap, scroll or draw on the tablet, and the mouse cursor jumps back to where it was on your other monitors, so you can keep working there without looking for it.
 - Tray app with an On/Off switch. Plug the tablet in and the extra monitor appears and the tablet app opens by itself; unplug it and Windows goes back to your normal monitors.
 - Starts with Windows, remembers its state, recovers on its own from cable drops and app restarts.
+- Game mode: while a fullscreen game or app runs on another monitor, the tablet stream drops to 30 fps and TabDisplay lowers its CPU and GPU priority, so the game keeps its frame rate. Full speed returns when the game leaves fullscreen or loses focus. `tabdisplay-host --game-fps <n>` sets the rate; `0` turns game mode off.
 
 ## Use it as a touch control panel
 
